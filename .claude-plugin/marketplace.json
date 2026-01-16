@@ -1,0 +1,18 @@
+{
+    "name": "super-publisher",
+    "owner": {
+        "name": "guanyang",
+        "email": "guanyangsunlight@gmail.com"
+    },
+    "metadata": {
+        "description": "Super Publisher plugin marketplace",
+        "version": "1.0.0"
+    },
+    "plugins": [
+        {
+            "name": "super-publisher",
+            "description": "Super Publisher plugin for automated content publishing, multi-platform support.",
+            "source": "./"
+        }
+    ]
+}

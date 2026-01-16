@@ -1,0 +1,23 @@
+{
+    "name": "super-publisher",
+    "description": "Super Publisher plugin for automated content publishing, multi-platform support.",
+    "version": "1.0.0",
+    "author": {
+        "name": "guanyang",
+        "email": "guanyangsunlight@gmail.com",
+        "url": "https://github.com/guanyang"
+    },
+    "homepage": "https://github.com/guanyang/super-publisher",
+    "repository": "https://github.com/guanyang/super-publisher",
+    "license": "MIT",
+    "keywords": [
+        "skills",
+        "automated-publishing",
+        "multi-platform",
+        "content-publishing",
+        "workflows"
+    ],
+    "skills": [
+        "./skills/toutiao-publisher"
+    ]
+}
