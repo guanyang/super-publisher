@@ -91,9 +91,12 @@ def publish(
         try:
             # Navigate to publishing page
             print(f"🌐 Navigating to {PUBLISH_URL}...")
-            page.goto(PUBLISH_URL)
-            page.wait_for_load_state("networkidle")
-            take_screenshot("loaded")
+            try:
+                page.goto(PUBLISH_URL, timeout=60000)
+                # Relaxed wait condition as networkidle is too strict for Toutiao
+                page.wait_for_load_state("domcontentloaded")
+            except Exception as e:
+                print(f"⚠️ Navigation warning (proceeding anyway): {e}")
 
             # Check if we were redirected to login
             if "auth/page/login" in page.url or "sso.toutiao.com" in page.url:
@@ -224,36 +227,38 @@ def publish(
                         # Then we convert it to 'final_html'.
                         # So 'content_html' is the plain text source.
 
-                        raw_text = content_html.replace("'", "\\'").replace(
-                            "\n", "\\n"
-                        )  # Escape for JS
-                        safe_html = final_html.replace("'", "\\'").replace("\n", "\\n")
-
-                        # Multi-strategy content filling
+                        # Use robust argument passing to avoid JS parsing errors
                         print("  Attempting content fill via execCommand...")
-                        filled = page.evaluate(f"""() => {{
+
+                        # Pass data safely to JS environment
+                        eval_args = {"html": final_html}
+
+                        filled = page.evaluate(
+                            """(data) => {
                             const editor = document.querySelector('.ProseMirror');
-                            if (editor) {{
+                            if (editor) {
                                 editor.focus();
                                 // Try insertHTML first - usually most reliable for WYSIWYG
-                                const success = document.execCommand('insertHTML', false, '{safe_html}');
-                                if (!success) {{
+                                const success = document.execCommand('insertHTML', false, data.html);
+                                if (!success) {
                                     // Fallback to clipboard event
                                     console.log('execCommand failed, trying clipboard event');
                                     const clipboardData = new DataTransfer();
-                                    clipboardData.setData('text/html', '{safe_html}');
+                                    clipboardData.setData('text/html', data.html);
                                     // Create paste event
-                                    const pasteEvent = new ClipboardEvent('paste', {{
+                                    const pasteEvent = new ClipboardEvent('paste', {
                                         bubbles: true,
                                         cancelable: true,
                                         clipboardData: clipboardData
-                                    }});
+                                    });
                                     editor.dispatchEvent(pasteEvent);
-                                }}
+                                }
                                 return true;
-                            }}
+                            }
                             return false;
-                        }}""")
+                        }""",
+                            eval_args,
+                        )
 
                         time.sleep(3)
                         print("✅ Content pasted via JS event.")
