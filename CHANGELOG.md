@@ -1,7 +1,17 @@
 # 更新日志
 
 本项目的所有重要更改都将记录在此文件中。
-
+## [1.1.0] - 2026-01-28
+### 🚀 新增功能
+- **表情包自动化流水线**:
+  - **Sticker Factory** (`skills/sticker-factory`): 全流程编排 Skill，实现从 prompt 到微信素材包的一键生产。
+  - **Grid Sticker Generator** (`skills/grid-sticker-generator`): 通用 4x4 网格表情生成器，支持“无字/透底”视觉规范及模板加载。
+  
+### 🛠 改进
+- **WeChat Sticker Maker**:
+  - 增加 `run.sh` 启动脚本，支持**全自动环境管理**（自动创建 venv、安装依赖）。
+  - 优化去底逻辑，增加对复杂背景的处理提示。
+  - 重构脚本位置，统一归档至 `scripts/` 目录。
 ## [1.0.0] - 2026-01-16
 
 ### 🎉 初始发布

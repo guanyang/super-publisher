@@ -11,6 +11,7 @@ description: 微信表情包制作工具。自动将六宫格、九宫格、十�
 
 *   **自动裁剪**：支持 2x3, 3x2, 3x3, 3x4, 4x3 等多种网格布局。
 *   **智能去底**：支持一键自动移除背景（需开启 `--remove-bg` 参数）。
+    *   *注意*：本 Skill 内置的去底功能基于 `rembg` (U2Net)，对于简单背景效果尚可，但对于复杂边缘（如发丝、半透明区域）处理可能不如 Photoshop 或专业在线修图工具完美。建议优先生成透明背景的原图，或手动精修后再使用本工具切图。
 *   **规范转换**：
     *   **表情主图**：统一调整为 **240x240** 像素 (PNG)。
     *   **聊天页图标**：统一调整为 **50x50** 像素 (PNG)。
@@ -21,30 +22,34 @@ description: 微信表情包制作工具。自动将六宫格、九宫格、十�
 
 ## 使用指南
 
-### 1. 准备工作
+### 1. 快速开始 (Quick Start)
 
-确保环境中已安装 Python 3 及相关库 (Pillow, rembg)：
+无需手动安装依赖，直接运行脚本即可。工具会自动创建虚拟环境 (`.venv`) 并安装所需依赖。
 
 ```bash
-pip install -r skills/wechat-sticker-maker/requirements.txt
+# 基本用法：自动处理并生成
+./skills/wechat-sticker-maker/scripts/run.sh /path/to/your/grid_image.png
+
+# 常用选项：
+# - 自动去底 (需要网络下载模型)
+./skills/wechat-sticker-maker/scripts/run.sh /path/to/image.png --remove-bg
+
+# - 指定布局 (例如 3x3)
+./skills/wechat-sticker-maker/scripts/run.sh /path/to/image.png --layout 3x3
+
+# - 指定输出目录
+./skills/wechat-sticker-maker/scripts/run.sh /path/to/image.png --output ./my_stickers
 ```
 
-### 2. 运行脚本
+### 2. (可选) 手动安装
 
-使用 `scripts/make_stickers.py` 对图片进行处理：
+如果您希望手动管理环境：
 
 ```bash
-# 自动探测布局并生成
-python3 skills/wechat-sticker-maker/scripts/make_stickers.py /path/to/your/grid_image.png
-
-# 指定布局 (例如 3行3列)
-python3 skills/wechat-sticker-maker/scripts/make_stickers.py /path/to/image.png --layout 3x3
-
-# 自动移除背景 (⚠️ 默认关闭，仅在用户明确要求去底时使用)
-python3 skills/wechat-sticker-maker/scripts/make_stickers.py /path/to/image.png --remove-bg
-
-# 指定输出目录
-python3 skills/wechat-sticker-maker/scripts/make_stickers.py /path/to/image.png --output ./my_stickers
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -r skills/wechat-sticker-maker/requirements.txt
+python3 skills/wechat-sticker-maker/scripts/make_stickers.py ...
 ```
 
 ### 3. 输出结果
