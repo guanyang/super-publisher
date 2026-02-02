@@ -218,3 +218,6 @@ data/**/*
 .agent/
 .worktrees/
 .private-journal/
+
+input
+output
