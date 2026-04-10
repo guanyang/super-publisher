@@ -11,6 +11,12 @@ Super Publisher 是一个专为 Agent 设计的插件，旨在实现自动化的
 - **智能适配**：自动优化标题长度，支持 Markdown 转 HTML。
 - **无头模式**：支持后台静默运行。
 
+### WeChat Post Publisher (`skills/wechat-post-publisher`)
+> 详细文档及配置说明请参考 [skills/wechat-post-publisher/README.md](skills/wechat-post-publisher/README.md)。
+- **全栈式大模型发文引擎**：提供将创作出的本地 Markdown 文档即时转化为微信公众号富文本底稿的能力。
+- **自动化图片与外链洗练**：自动接管网络引文并降级为文尾学术标注；并支持自动上传处理本地的配图文件上微信 CDN 素材库。
+- **多租户极客沙盒 (Multi-tenant)**：原生内置了凭据分离墙，利用 `--account` 一键切分并加载多重维度的测试或商业公号资源池。
+
 ### WeChat Sticker Maker (`skills/wechat-sticker-maker`)
 > 详细文档请参考 [skills/wechat-sticker-maker/README.md](skills/wechat-sticker-maker/README.md)。
 - **智能切分**：自动识别或指定网格布局（九宫格、十六宫格等），精准切分拼图。
@@ -44,6 +50,7 @@ Super Publisher 是一个专为 Agent 设计的插件，旨在实现自动化的
 │   ├── grid-sticker-generator/ # [NEW] 通用网格表情生成 Skill
 │   ├── sticker-factory/      # [NEW] 表情包自动化工厂 Skill
 │   ├── toutiao-publisher/    # 头条号发布 Skill
+│   ├── wechat-post-publisher/# [NEW] 微信公众号全自动发布图文 Skill
 │   └── wechat-sticker-maker/ # 微信表情包制作 Skill
 
 ├── spec/                # 规范文档

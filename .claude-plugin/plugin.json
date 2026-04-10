@@ -1,7 +1,7 @@
 {
     "name": "super-publisher",
     "description": "Super Publisher plugin for automated content publishing, multi-platform support.",
-    "version": "1.0.0",
+    "version": "1.3.0",
     "author": {
         "name": "guanyang",
         "email": "guanyangsunlight@gmail.com",
@@ -16,8 +16,5 @@
         "multi-platform",
         "content-publishing",
         "workflows"
-    ],
-    "skills": [
-        "./skills/toutiao-publisher"
     ]
 }

@@ -221,3 +221,6 @@ data/**/*
 
 input
 output
+
+node_modules/
+.super-publisher/

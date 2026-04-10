@@ -1,0 +1,11 @@
+{
+  "name": "wechat-post-publisher-scripts",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@jsquash/webp": "^1.5.0",
+    "super-chrome-cdp": "file:./vendor/super-chrome-cdp",
+    "super-md": "file:./vendor/super-md",
+    "jimp": "^1.6.0"
+  }
+}
