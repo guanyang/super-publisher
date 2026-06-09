@@ -1,6 +1,6 @@
 ---
 name: sticker-factory
-description: Automated factory workflow: Generates grid-based sticker sheets (defaulting to Office Worker style but adaptable) and auto-packages them for WeChat using wechat-sticker-maker.
+description: "Automated factory workflow: Generates grid-based sticker sheets (defaulting to Office Worker style but adaptable) and auto-packages them for WeChat using wechat-sticker-maker."
 ---
 
 # Sticker Factory (Auto-Generator & Packer)
