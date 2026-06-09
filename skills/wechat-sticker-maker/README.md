@@ -14,10 +14,7 @@
 2.  **精确切分 (Precision Slicing)**:
     *   根据计算出的行列数，使用浮点数坐标运算，精确地将原图切割为独立的单元格，避免累积误差。
 
-3.  **AI 智能去底 (AI Background Removal)**:
-    *   (可选) 集成 `rembg` 库，利用 U2-Net 模型对输入图片进行高精度背景移除，无需手动抠图。
-
-4.  **规范化处理 (Normalization)**:
+3.  **规范化处理 (Normalization)**:
     *   **主图生成**: 将切片统一缩放至微信要求的 **240x240** 像素，输出为 PNG 格式。
     *   **图标生成**: 同步生成 **50x50** 像素的缩略/聊天页图标。
     *   **候选素材**: 自动提取第一张表情作为“表情专辑封面”和“聊天页图标”的候选图。
@@ -39,10 +36,10 @@ skills/wechat-sticker-maker/
     └── make_stickers.py    # 核心处理脚本
 ```
 
-运行脚本后，生成的**输出目录**结构如下：
+运行脚本后，生成的**输出目录**（默认或指定）结构如下：
 
 ```text
-sticker_output/
+output/stickers_[theme]/
 ├── cover_candidate.png     # [候选] 专辑封面/头像 (240x240)
 ├── chat_icon_candidate.png # [候选] 聊天页图标 (50x50)
 ├── info.txt                # 专辑信息模板 (名称/简介)
@@ -94,6 +91,6 @@ python3 skills/wechat-sticker-maker/scripts/make_stickers.py /path/to/image.png
 # 强制指定布局
 python3 skills/wechat-sticker-maker/scripts/make_stickers.py /path/to/image.png --layout 3x3
 
-# 启用自动去背 (⚠️ 默认关闭，仅在明确需要时使用)
-python3 skills/wechat-sticker-maker/scripts/make_stickers.py /path/to/image.png --remove-bg
+# 指定输出目录 (默认为 sticker_output)
+python3 skills/wechat-sticker-maker/scripts/make_stickers.py /path/to/image.png --output ./my_stickers_output
 ```

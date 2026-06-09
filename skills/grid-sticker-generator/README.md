@@ -15,8 +15,8 @@
     *   **零文字原则**: 严禁生成汉字、英文或对话气泡。所有的情绪表达必须通过肢体语言和通用漫符（如 💢, 💦）完成。
 
 3.  **模板化引擎 (Templating Engine)**:
-    *   Skill 支持加载 `resources/` 下的主题模板。
-    *   **默认行为**: 调用内置的 `office_worker_template.md`（打工人模板），自动填充“摸鱼”、“加班”等职场梗。
+    *   Skill 支持加载 `references/` 下的主题模板。
+    *   **默认行为**: 调用内置的 `office_worker_template.md`（打工人模板），自动填充“摸鱼”、“加班”等职场梗.
     *   **通用行为**: 也支持用户自定义主题（如“快乐小狗”），Skill 会根据通用 4x4 规范生成多样化的动作。
 
 ## 📂 目录结构
@@ -25,8 +25,11 @@
 skills/grid-sticker-generator/
 ├── README.md               # 本说明文档
 ├── SKILL.md                # 核心 Prompts 构建逻辑
-└── resources/              # 提示词模板库
-    └── office_worker_template.md  # [内置] 打工人主题模板
+└── references/             # 提示词模板库
+    ├── office_worker_template.md  # [内置] 打工人主题模板
+    ├── slacker_template.md        # [新增] 咸鱼摆烂日常主题模板
+    ├── daily_chat_template.md     # [新增] 日常社交敷衍主题模板
+    └── cute_pet_template.md       # [新增] 猫咪萌宠日常主题模板
 ```
 
 ## 🗣️ 自然语言调用示例

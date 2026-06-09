@@ -1,6 +1,7 @@
 ---
 name: grid-sticker-generator
-description: A universal 4x4 grid sticker generator. uses strict visual guidelines (No Text, Transparent BG) and supports loading theme templates from resources.
+description: A universal 4x4 grid sticker generator. Uses strict visual guidelines (No Text, Transparent BG) and supports loading theme templates from references.
+compatibility: Requires AI image generation tools (such as generate_image or equivalent drawing tools).
 ---
 
 # Universal Grid Sticker Generator
@@ -28,11 +29,23 @@ description: A universal 4x4 grid sticker generator. uses strict visual guidelin
 
 ## 📂 模板系统 (Template System)
 
-本 Skill 支持加载不同的主题模板。模板位于 `resources/` 目录下。
+本 Skill 支持加载不同的主题模板。模板位于 `references/` 目录下。
 
 ### 默认模板：打工人 (Office Worker)
-*   **Template File**: `resources/office_worker_template.md`
+*   **Template File**: `references/office_worker_template.md`
 *   **Description**: 包含“摸鱼”、“加班”、“画饼”等32个经典职场梗的随机库。
+
+### 其它模板：咸鱼摆烂日常 (Slacker / Salted Fish Daily)
+*   **Template File**: `references/slacker_template.md`
+*   **Description**: 包含“躺平”、“吃瓜”、“熬夜”、“快乐水”等32个日常生活的摆烂与情绪梗。
+
+### 其它模板：日常社交敷衍 (Daily Chat & Social Greetings)
+*   **Template File**: `references/daily_chat_template.md`
+*   **Description**: 包含“收到”、“点赞”、“谢谢”、“哈哈”等32个社交聊天高频互动的敷衍与情绪动作。
+
+### 其它模板：猫咪萌宠日常 (Cute Cat & Pet Daily)
+*   **Template File**: `references/cute_pet_template.md`
+*   **Description**: 包含“歪头杀”、“伸懒腰”、“求摸肚皮”、“傲娇”、“拆家”等32个治愈系萌宠行为动作。
 
 ## 🛠️ 执行流程 (Execution Workflow)
 

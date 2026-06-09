@@ -3,12 +3,6 @@ import os
 import argparse
 from PIL import Image
 
-try:
-    from rembg import remove
-
-    REMBG_AVAILABLE = True
-except ImportError:
-    REMBG_AVAILABLE = False
 
 
 def determine_layout(img_width, img_height):
@@ -38,7 +32,7 @@ def determine_layout(img_width, img_height):
     return 3, 3
 
 
-def process_image(image_path, layout_str, output_dir, remove_bg=False):
+def process_image(image_path, layout_str, output_dir):
     if not os.path.exists(image_path):
         print(f"Error: File not found: {image_path}")
         sys.exit(1)
@@ -55,15 +49,6 @@ def process_image(image_path, layout_str, output_dir, remove_bg=False):
     width, height = img.size
     print(f"Image Size: {width}x{height}")
 
-    if remove_bg and not REMBG_AVAILABLE:
-        print("Error: 'rembg' module not found. Please install it: pip install rembg")
-        sys.exit(1)
-
-    if remove_bg:
-        print("AI Background removal enabled. Processing each sticker individually...")
-
-    # OLD LOGIC: Full image background removal (Commented out/Removed)
-    # Moving background removal to per-cell processing for better accuracy.
 
     if layout_str:
         try:
@@ -106,23 +91,6 @@ def process_image(image_path, layout_str, output_dir, remove_bg=False):
             # Crop
             cell = img.crop(box)
 
-            # AI Background Removal (Per Cell)
-            if remove_bg:
-                if not REMBG_AVAILABLE:
-                    # Should be checked earlier, but just in case
-                    print("Error: 'rembg' module missing.")
-                    sys.exit(1)
-                try:
-                    # Remove bg for this specific cell with alpha matting for better edges
-                    cell = remove(
-                        cell,
-                        alpha_matting=True,
-                        alpha_matting_foreground_threshold=240,
-                        alpha_matting_background_threshold=10,
-                        alpha_matting_erode_size=10,
-                    )
-                except Exception as e:
-                    print(f"Warning: Failed to remove bg for item {count}: {e}")
 
             # Stickers: 240x240 (Expression Image)
             sticker = cell.resize((240, 240), Image.Resampling.LANCZOS)
@@ -194,11 +162,6 @@ if __name__ == "__main__":
     parser.add_argument(
         "--output", default="sticker_output", help="Output directory path"
     )
-    parser.add_argument(
-        "--remove-bg",
-        action="store_true",
-        help="Automatically remove background using AI",
-    )
 
     args = parser.parse_args()
-    process_image(args.image, args.layout, args.output, args.remove_bg)
+    process_image(args.image, args.layout, args.output)

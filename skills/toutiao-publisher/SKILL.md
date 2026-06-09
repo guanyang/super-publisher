@@ -1,6 +1,7 @@
 ---
 name: toutiao-publisher
 description: Publish articles to Toutiao (Today's Headlines). Handles persistent authentication (login once) and session management. Opens browser for interactive publishing.
+compatibility: Requires Python 3.9+, Patchright (Playwright fork), and Google Chrome. Runs in headless mode or launches Chrome for QR code authentication.
 ---
 
 # Toutiao Publisher Skill
