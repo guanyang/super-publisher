@@ -75,13 +75,26 @@ Super Publisher 是一个专为 Agent 设计的插件，旨在实现自动化的
 /plugin install super-publisher@super-publisher
 ```
 
-#### 2. Antigravity
-执行以下命令配置skills目录下的能力：
+#### 2. 本地安装 / 其他 Agent
+可以使用安装脚本，一键将 skills 软链接（symlink）到指定的 Agent 技能目录下：
+
+```bash
+# 默认软链接到 ~/.agent/skills 目录下
+./scripts/install-skills.sh
+
+# 或者软链接到自定义的工作区/路径下
+./scripts/install-skills.sh /path/to/your/workspace/.agents/skills
+
+# 如果需要卸载/删除已安装的软链接
+./scripts/install-skills.sh --delete /path/to/your/workspace/.agents/skills
+```
+
+或者手动执行以下命令进行配置：
 ```bash
 # 创建.agent目录
-mkdir -p /path/to/your/workspace/.agent/skills
+mkdir -p /path/to/your/workspace/.agents/skills
 # 将skills目录复制到.agent/skills目录
-cp -r skills/* /path/to/your/workspace/.agent/skills/
+cp -r skills/* /path/to/your/workspace/.agents/skills/
 ```
 - 注意：请将`/path/to/your/workspace`替换为你的工作区路径。
 
@@ -89,13 +102,6 @@ cp -r skills/* /path/to/your/workspace/.agent/skills/
 加载插件后，你可以直接通过自然语言与 Claude 交互使用相关能力，例如：
 > "帮我把这篇文章发布到头条号"
 > "检查头条号登录状态"
-
-## 🛠 开发指南
-
-### 创建新 Skill
-1. 复制 `template/SKILL.md` 到 `skills/<new-skill-name>/SKILL.md`。
-2. 按照 `spec/Specification.md` 中的规范完善 Skill 定义。
-3. 在 `skills/<new-skill-name>/` 目录下实现具体的脚本和逻辑。
 
 ### 规范参考
 详细的 Agent Skills 格式规范请参考 [spec/Specification.md](spec/Specification.md)。
