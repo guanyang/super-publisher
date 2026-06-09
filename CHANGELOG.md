@@ -1,6 +1,22 @@
 # 更新日志
 
 本项目的所有重要更改都将记录在此文件中。
+
+## [1.4.0] - 2026-06-09
+### 🚀 新增功能
+- **WeChat Sticker Assets Designer** (`skills/wechat-sticker-assets-designer`):
+  - **配套宣传素材设计师**: 根据表情包 IP 形象特征，自动生成符合官方规格的微信横幅 (Banner)、赞赏引导图和赞赏致谢图。
+  - **中文字体文案整合**: 支持在引导图与致谢图中优雅融合官方指定文案。
+  - **自动尺寸校准**: 内置 Pillow 条件裁剪与缩放脚本 `crop_and_resize.py`，并提供 `run.sh` 自动环境管理包装，实现官方比例精准切图。
+
+### 🛠 改进与重构
+- **WeChat Sticker Maker**:
+  - **环境极致轻量化**: 彻底移除了效果欠佳的重型 `--remove-bg` 背景消除功能以及对应的 `rembg`、`onnxruntime` 库依赖，大幅提升 Skill 初始化及装载速度。
+  - **输出目录自定义**: 支持并指引 Agent 传入自定义目标文件夹（默认为 `output/stickers_[theme]` 格式），更贴合实际工程目录规范。
+- **Sticker Factory**:
+  - **全流程并轨生产**: 将配套宣传素材设计技能（`wechat-sticker-assets-designer`）整合到表情包自动生产流水线中。
+  - **输出目录统一化**: 实现将生成的表情包主体包和配套宣传素材合并输出到同一个总目录下，素材文件整理于 `assets/` 子目录，消除零散输出。
+
 ## [1.3.0] - 2026-04-10
 ### 🚀 新增功能
 - **WeChat Post Publisher** (`skills/wechat-post-publisher`):

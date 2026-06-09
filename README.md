@@ -21,8 +21,13 @@ Super Publisher 是一个专为 Agent 设计的插件，旨在实现自动化的
 > 详细文档请参考 [skills/wechat-sticker-maker/README.md](skills/wechat-sticker-maker/README.md)。
 - **智能切分**：自动识别或指定网格布局（九宫格、十六宫格等），精准切分拼图。
 - **规范适配**：自动生成符合微信规范的 240x240 主图和 50x50 聊天页图标。
-- **AI 去底**：内置 `rembg` 智能去背功能，支持一键移除复杂背景（可选）。
 - **元数据生成**：自动生成含义词配置表 (`meta.txt`) 和专辑信息模板 (`info.txt`)，加速提交流程。
+
+### WeChat Sticker Assets Designer (`skills/wechat-sticker-assets-designer`)
+> 详细文档请参考 [skills/wechat-sticker-assets-designer/README.md](skills/wechat-sticker-assets-designer/README.md)。
+- **规范化生成**：根据用户提供的表情包 IP 形象，一键生成符合微信表情官方规范的横幅 (Banner, 750x400)、赞赏引导图 (750x560) 和赞赏致谢图 (750x750)。
+- **条件化裁剪**：内置 Pillow 条件裁剪与缩放脚本，确保导出的图稿像素和构图精准无误。
+- **文案深度整合**：支持自动排版和在引导图及致谢图中完美融入指定官方中文字体文案。
 
 ### Grid Sticker Generator (`skills/grid-sticker-generator`)
 > 详细文档请参考 [skills/grid-sticker-generator/README.md](skills/grid-sticker-generator/README.md)。
@@ -31,8 +36,8 @@ Super Publisher 是一个专为 Agent 设计的插件，旨在实现自动化的
 
 ### Sticker Factory (`skills/sticker-factory`)
 > 详细文档请参考 [skills/sticker-factory/README.md](skills/sticker-factory/README.md)。
-- **全流程编排**：作为“工厂经理”，串联生成器和制作器。
-- **一键交付**：从自然语言需求（"生成一套快乐小狗表情包"）直接产出可提交的素材包。
+- **全流程编排**：作为“工厂经理”，串联网格生成器、表情包切片制作器及配套宣传素材设计器。
+- **一键整合交付**：从自然语言需求（如 "生成一套快乐小狗表情包"）直接产出包含表情包切片、图标、元数据以及裁剪好的配套 Banner 与赞赏致谢图的一体化输出目录。
 
 ### GIF Maker (`skills/gif-maker`)
 > 详细文档请参考 [skills/gif-maker/README.md](skills/gif-maker/README.md)。
@@ -51,6 +56,7 @@ Super Publisher 是一个专为 Agent 设计的插件，旨在实现自动化的
 │   ├── sticker-factory/      # [NEW] 表情包自动化工厂 Skill
 │   ├── toutiao-publisher/    # 头条号发布 Skill
 │   ├── wechat-post-publisher/# [NEW] 微信公众号全自动发布图文 Skill
+│   ├── wechat-sticker-assets-designer/ # [NEW] 微信表情包发布配套素材设计 Skill
 │   └── wechat-sticker-maker/ # 微信表情包制作 Skill
 
 ├── spec/                # 规范文档
