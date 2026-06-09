@@ -109,7 +109,24 @@ cp -r skills/* /path/to/your/workspace/.agents/skills/
 > "帮我把这篇文章发布到头条号"
 > "检查头条号登录状态"
 
-### 规范参考
+## 💡 最佳实践 (Best Practices)
+
+### 1. 表情包生产一站式工作流
+当需要从零创作并发布一套全新的微信表情包时，推荐直接使用 **Sticker Factory** (`skills/sticker-factory`)：
+*   **一句话生产**：直接对 Agent 发送指令，例如：`"/sticker-factory 基于 [角色形象] 制作一套咸鱼摆烂的表情包并生成配套素材"`。
+*   **全流程自动化**：工厂会自动调用 `grid-sticker-generator` 生成 16 宫格图片，接着通过 `wechat-sticker-maker` 智能切片与命名，最后调用 `wechat-sticker-assets-designer` 智能绘制适配该 IP 角色风格的 Banner 和赞赏图。
+*   **统一交付归档**：所有最终成果（包含切片、图标、元数据 `meta.txt` / `info.txt` 描述及配套 Banner/赞赏图等）均统一保存在 `output/stickers_[theme]` 目录下，免去零散整理的烦恼。
+
+### 2. 保证 IP 角色一致性
+在生成配套素材（Banner、赞赏引导图、致谢图）时，为确保生成的图片与表情包原图的角色及画风一致：
+*   **参考图机制**：先生成表情包主体网格图，并将该原图的路径或生成的第一个表情图片作为参考图传递给 Assets Designer。
+*   **Prompt 约束**：在绘图 Prompt 中清晰描述 IP 角色的关键视觉特征（如“双丸子头搭配红色飘带”、“经典的黑色蘑菇头黑白简笔面部”等）并配合画风风格限定词（如“2D vector, flat illustration, bold outlines”），以获得高还原度的设计。
+
+### 3. 公众号发布底稿洗练
+发布图文到微信公众号时：
+*   **自动处理多媒体与外链**：建议将本地 Markdown 编写好后，交由 `wechat-post-publisher` 进行处理。它会自动处理本地配图，上传至微信 CDN 素材库，并安全转换所有的外链，大大缩减了手动排版的时间。
+
+## ⚙️ 规范参考
 详细的 Agent Skills 格式规范请参考 [spec/Specification.md](spec/Specification.md)。
 
 ## 📝 许可证
