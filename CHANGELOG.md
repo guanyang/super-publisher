@@ -2,6 +2,13 @@
 
 本项目的所有重要更改都将记录在此文件中。
 
+## [Unreleased]
+### 🚀 新增功能
+- **Video Tutorial Maker** (`skills/video-tutorial-maker`):
+  - **教程视频包生成**: 支持将主题、提纲、脚本或既有视频转成带旁白、字幕和场景规划的教程视频制作流程。
+  - **音画字幕同步规范**: 明确按场景生成 TTS、字幕时间线和补齐后的音频，降低多片段拼接时的漂移风险。
+  - **平台变体输出**: 默认指导生成 1920x1080 横屏 MP4，并提供 9:16 无裁切转换模式。
+
 ## [1.4.0] - 2026-06-09
 ### 🚀 新增功能
 - **WeChat Sticker Assets Designer** (`skills/wechat-sticker-assets-designer`):

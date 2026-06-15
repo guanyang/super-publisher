@@ -45,6 +45,11 @@ Super Publisher 是一个专为 Agent 设计的插件，旨在实现自动化的
 - **智能压缩**：专为表情包设计，支持 `--max-size` 参数，自动将 GIF 压制在微信限制（1MB/500KB）以内。
 - **参数灵活**：支持自定义 FPS、布局切分及循环模式。
 
+### Video Tutorial Maker (`skills/video-tutorial-maker`)
+- **教程视频生成**：将主题、提纲、脚本或既有视频整理成带旁白的教程视频包。
+- **音画字幕同步**：按场景生成 TTS、时间线字幕与固定时长视频片段，避免多段拼接后的字幕或语音漂移。
+- **平台版本适配**：默认输出 1920x1080 横屏 MP4，并在需要时指导生成 9:16 等平台变体。
+
 ## 📂 项目结构
 
 ```
@@ -55,6 +60,7 @@ Super Publisher 是一个专为 Agent 设计的插件，旨在实现自动化的
 │   ├── grid-sticker-generator/ # [NEW] 通用网格表情生成 Skill
 │   ├── sticker-factory/      # [NEW] 表情包自动化工厂 Skill
 │   ├── toutiao-publisher/    # 头条号发布 Skill
+│   ├── video-tutorial-maker/ # 教程视频生成 Skill
 │   ├── wechat-post-publisher/# [NEW] 微信公众号全自动发布图文 Skill
 │   ├── wechat-sticker-assets-designer/ # [NEW] 微信表情包发布配套素材设计 Skill
 │   └── wechat-sticker-maker/ # 微信表情包制作 Skill
@@ -108,6 +114,7 @@ cp -r skills/* /path/to/your/workspace/.agents/skills/
 加载插件后，你可以直接通过自然语言与 Claude 交互使用相关能力，例如：
 > "帮我把这篇文章发布到头条号"
 > "检查头条号登录状态"
+> "把这个产品功能写成一支 16:9 教程视频，并生成旁白和字幕"
 
 ## 💡 最佳实践 (Best Practices)
 
