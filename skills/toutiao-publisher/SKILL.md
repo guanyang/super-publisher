@@ -47,16 +47,30 @@ python scripts/run.py publisher.py
 
 > **Note:** Toutiao requires titles to be **2-30 characters**. This tool automatically optimizes titles to fit this constraint (truncating if >30, padding if <2).
 
-#### Advanced Usage (Automated)
+#### Advanced Usage (Draft Automation)
 
-You can fully automate the publishing process by providing arguments:
+You can fill a draft automatically by providing arguments. By default, the tool stops before final publishing so the user can inspect the article and click Publish manually.
 
 ```bash
-# Publish with title, content file, and cover image
-python scripts/run.py publisher.py --title "AI Trends 2025" --content "article.md" --cover "assets/cover.jpg" --headless
+# Fill title, Markdown content, inline images, and cover image
+python scripts/run.py publisher.py --title "AI Trends 2025" --content "article.md" --cover "assets/cover.jpg"
 ```
 
+Markdown images such as `![caption](assets/chart.png)` are inserted into the article body at their original positions. Local relative image paths are resolved from the Markdown file directory.
 
+If the article body contains images, the tool skips explicit cover handling and does not open Toutiao's cover picker. `--cover` is only uploaded when the Markdown body has no inline images.
+
+Debug screenshots are disabled by default. If troubleshooting is needed, add `--debug-screenshots`; screenshots will be saved under `output/toutiao-publisher-debug/` instead of the working directory.
+
+#### Automated Final Publish
+
+Only use this when the user explicitly asks to publish without manual review:
+
+```bash
+python scripts/run.py publisher.py --title "AI Trends 2025" --content "article.md" --cover "assets/cover.jpg" --auto-publish
+```
+
+Without `--auto-publish`, never click Toutiao's final publish buttons automatically.
 
 ### Management
 

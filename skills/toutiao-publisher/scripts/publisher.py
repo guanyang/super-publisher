@@ -9,6 +9,10 @@ import argparse
 import time
 from pathlib import Path
 import os
+import platform
+import shutil
+import subprocess
+import tempfile
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -19,17 +23,305 @@ from auth_manager import AuthManager
 from browser_utils import BrowserFactory
 
 
-from md2html import convert as md_to_html
+from md2html import convert_with_images
+
+
+def _run_command(command, args, input_data=None):
+    result = subprocess.run(
+        [command, *args],
+        input=input_data,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+    )
+    return result.returncode == 0
+
+
+def copy_image_to_clipboard(image_path):
+    system = platform.system()
+    image_path = str(Path(image_path).resolve())
+
+    if system == "Darwin":
+        swift_source = """
+import AppKit
+import Foundation
+
+let inputPath = CommandLine.arguments[1]
+let pasteboard = NSPasteboard.general
+pasteboard.clearContents()
+
+guard let image = NSImage(contentsOfFile: inputPath) else {
+  FileHandle.standardError.write("Failed to load image\\n".data(using: .utf8)!)
+  exit(1)
+}
+
+if !pasteboard.writeObjects([image]) {
+  FileHandle.standardError.write("Failed to write image to clipboard\\n".data(using: .utf8)!)
+  exit(1)
+}
+"""
+        with tempfile.TemporaryDirectory(prefix="toutiao-clipboard-") as temp_dir:
+            swift_path = Path(temp_dir) / "clipboard.swift"
+            swift_path.write_text(swift_source, encoding="utf-8")
+            return _run_command("swift", [str(swift_path), image_path])
+
+    if system == "Linux":
+        mime = "image/png"
+        ext = Path(image_path).suffix.lower()
+        if ext in {".jpg", ".jpeg"}:
+            mime = "image/jpeg"
+        elif ext == ".gif":
+            mime = "image/gif"
+        elif ext == ".webp":
+            mime = "image/webp"
+
+        if shutil.which("wl-copy"):
+            with open(image_path, "rb") as image_file:
+                return _run_command("wl-copy", ["--type", mime], image_file.read())
+        if shutil.which("xclip"):
+            return _run_command("xclip", ["-selection", "clipboard", "-t", mime, "-i", image_path])
+        print("  ⚠️ No clipboard tool found. Install wl-copy or xclip.")
+        return False
+
+    if system == "Windows":
+        escaped = image_path.replace("'", "''")
+        ps = (
+            "Add-Type -AssemblyName System.Windows.Forms;"
+            "Add-Type -AssemblyName System.Drawing;"
+            f"$img = [System.Drawing.Image]::FromFile('{escaped}');"
+            "[System.Windows.Forms.Clipboard]::SetImage($img);"
+            "$img.Dispose()"
+        )
+        return _run_command("powershell.exe", ["-NoProfile", "-Sta", "-Command", ps])
+
+    print(f"  ⚠️ Unsupported clipboard platform: {system}")
+    return False
+
+
+def paste_from_clipboard(page):
+    system = platform.system()
+    if system == "Darwin":
+        if _run_command(
+            "osascript",
+            [
+                "-e",
+                'tell application "Google Chrome" to activate',
+                "-e",
+                'tell application "System Events" to keystroke "v" using command down',
+            ],
+        ):
+            return True
+    elif system == "Linux":
+        if shutil.which("xdotool") and _run_command("xdotool", ["key", "ctrl+v"]):
+            return True
+        if shutil.which("ydotool") and _run_command("ydotool", ["key", "29:1", "47:1", "47:0", "29:0"]):
+            return True
+    elif system == "Windows":
+        ps = "Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.SendKeys]::SendWait('^v')"
+        if _run_command("powershell.exe", ["-NoProfile", "-Command", ps]):
+            return True
+
+    try:
+        modifier = "Meta" if system == "Darwin" else "Control"
+        page.keyboard.press(f"{modifier}+V")
+        return True
+    except Exception as e:
+        print(f"  ⚠️ Failed to send paste keystroke: {e}")
+        return False
+
+
+def select_placeholder(page, placeholder, retries=3):
+    for attempt in range(1, retries + 1):
+        selected = page.evaluate(
+            """(placeholder) => {
+            const editor = document.querySelector('.ProseMirror');
+            if (!editor) return false;
+
+            const walker = document.createTreeWalker(editor, NodeFilter.SHOW_TEXT);
+            let node;
+            while ((node = walker.nextNode())) {
+                const text = node.textContent || '';
+                let searchStart = 0;
+                let idx;
+                while ((idx = text.indexOf(placeholder, searchStart)) !== -1) {
+                    const afterIdx = idx + placeholder.length;
+                    const charAfter = text[afterIdx];
+                    if (charAfter === undefined || !/\\d/.test(charAfter)) {
+                        node.parentElement?.scrollIntoView({ block: 'center' });
+                        const range = document.createRange();
+                        range.setStart(node, idx);
+                        range.setEnd(node, afterIdx);
+                        const selection = window.getSelection();
+                        selection.removeAllRanges();
+                        selection.addRange(range);
+                        editor.focus();
+                        return true;
+                    }
+                    searchStart = afterIdx;
+                }
+            }
+            return false;
+        }""",
+            placeholder,
+        )
+        if selected:
+            selected_text = page.evaluate("window.getSelection()?.toString() || ''")
+            if selected_text.strip() == placeholder:
+                return True
+        if attempt < retries:
+            time.sleep(0.5)
+    return False
+
+
+def insert_content_images(page, images):
+    if not images:
+        return True
+
+    print(f"🖼️ Inserting {len(images)} inline image(s)...")
+    success = True
+
+    for index, image in enumerate(images, start=1):
+        placeholder = image["placeholder"]
+        image_path = image["path"]
+        print(f"  [{index}/{len(images)}] Replacing {placeholder}...")
+
+        if image_path.startswith(("http://", "https://", "data:")):
+            print(f"  ⚠️ Skipping non-local image: {image_path}")
+            success = False
+            continue
+
+        if not os.path.exists(image_path):
+            print(f"  ⚠️ Image file not found: {image_path}")
+            success = False
+            continue
+
+        if not copy_image_to_clipboard(image_path):
+            print("  ⚠️ Failed to copy image to clipboard.")
+            success = False
+            continue
+
+        if not select_placeholder(page, placeholder):
+            print(f"  ⚠️ Could not select placeholder: {placeholder}")
+            success = False
+            continue
+
+        before_count = page.locator(".ProseMirror img").count()
+        page.keyboard.press("Backspace")
+        time.sleep(0.3)
+
+        if not paste_from_clipboard(page):
+            print("  ⚠️ Failed to paste image.")
+            success = False
+            continue
+
+        inserted = False
+        start = time.time()
+        while time.time() - start < 20:
+            if page.locator(".ProseMirror img").count() > before_count:
+                inserted = True
+                break
+            time.sleep(1)
+
+        if inserted:
+            print("  ✅ Image inserted.")
+        else:
+            print("  ⚠️ Image insertion was not detected.")
+            success = False
+
+    remaining = page.evaluate(
+        """() => {
+        const text = document.querySelector('.ProseMirror')?.innerText || '';
+        return Array.from(text.matchAll(/TTIMGPH_\\d+/g)).map(match => match[0]);
+    }"""
+    )
+    if remaining:
+        print(f"  ⚠️ Remaining image placeholders: {', '.join(remaining)}")
+        success = False
+
+    return success
+
+
+def click_locator_with_fallback(locator, description):
+    try:
+        locator.click(timeout=3000)
+        return True
+    except Exception as e:
+        print(f"  ⚠️ Normal click failed for {description}: {e}")
+
+    try:
+        locator.click(force=True, timeout=3000)
+        return True
+    except Exception as e:
+        print(f"  ⚠️ Force click failed for {description}: {e}")
+
+    try:
+        locator.evaluate("(el) => el.click()")
+        return True
+    except Exception as e:
+        print(f"  ⚠️ JS click failed for {description}: {e}")
+        return False
+
+
+def click_button_by_text(page, texts, description, timeout_ms=5000):
+    end_time = time.time() + timeout_ms / 1000
+    while time.time() < end_time:
+        result = page.evaluate(
+            """(texts) => {
+            const buttons = Array.from(document.querySelectorAll('button, .byte-btn'));
+            for (const button of buttons) {
+                const text = (button.textContent || '').trim();
+                if (texts.some(item => text.includes(item))) {
+                    button.scrollIntoView({ block: 'center' });
+                    button.click();
+                    return text || 'clicked';
+                }
+            }
+            return '';
+        }""",
+            texts,
+        )
+        if result:
+            print(f"  Clicked {description}: {result}")
+            return True
+        time.sleep(0.5)
+    print(f"  ⚠️ Could not find {description}.")
+    return False
+
+
+def should_upload_cover(cover_image_path=None, content_images=None):
+    return bool(cover_image_path) and not bool(content_images)
+
+
+def make_screenshot_taker(page, enabled=False, debug_dir=None):
+    if not enabled:
+        return lambda name: None
+
+    target_dir = Path(debug_dir or "output/toutiao-publisher-debug") / str(int(time.time()))
+
+    def take_screenshot(name):
+        try:
+            target_dir.mkdir(parents=True, exist_ok=True)
+            ts = int(time.time())
+            filename = target_dir / f"{ts}_{name}.png"
+            page.screenshot(path=str(filename))
+            print(f"  📸 Saved screenshot: {filename}")
+        except Exception as e:
+            print(f"  ⚠️ Screenshot failed: {e}")
+
+    return take_screenshot
 
 
 def publish(
     title=None,
     content_html=None,
+    content_base_dir=None,
     cover_image_path=None,
     dry_run=False,
     headless=False,
     no_cover=False,
     raw=False,
+    auto_publish=False,
+    debug_screenshots=False,
+    debug_dir=None,
 ):
     """
     Launches a browser to the Toutiao publishing page and automates the posting process.
@@ -59,14 +351,21 @@ def publish(
 
     # Convert Markdown to HTML if content is provided
     final_html = ""
+    content_images = []
     if content_html and not raw:
         print("🔄 Converting Markdown to HTML...")
         try:
-            final_html = md_to_html(content_html)
+            converted = convert_with_images(content_html, base_dir=content_base_dir)
+            final_html = converted.html
+            content_images = converted.images
             print(f"  HTML preview: {final_html[:100]}...")
+            if content_images:
+                print(f"  Found {len(content_images)} inline image(s).")
         except Exception as e:
             print(f"⚠️ Conversion failed, using raw text: {e}")
             final_html = content_html
+    elif content_html:
+        final_html = content_html
 
     print(f"🚀 Launching Toutiao Publisher (Headless: {headless})...")
 
@@ -76,17 +375,11 @@ def publish(
         # Get the page (persistent context usually has one page open or we create one)
         page = context.pages[0] if context.pages else context.new_page()
 
-        # Helper for screenshot
-        def take_screenshot(name):
-            try:
-                # Use timestamp to avoid overwrites
-                ts = int(time.time())
-                filename = f"debug_{name}_{ts}.png"
-                # Save in current directory
-                page.screenshot(path=filename)
-                print(f"  📸 Saved screenshot: {filename}")
-            except Exception as e:
-                print(f"  ⚠️ Screenshot failed: {e}")
+        take_screenshot = make_screenshot_taker(
+            page,
+            enabled=debug_screenshots,
+            debug_dir=debug_dir,
+        )
 
         try:
             # Navigate to publishing page
@@ -300,8 +593,18 @@ def publish(
 
                 take_screenshot("after_content")
 
+                if content_images:
+                    try:
+                        insert_content_images(page, content_images)
+                    except Exception as e:
+                        print(f"⚠️ Failed to insert inline images: {e}")
+                    take_screenshot("after_inline_images")
+
             # 3. Cover Image Processing
-            if cover_image_path:
+            if cover_image_path and content_images:
+                print("🖼️ Article has inline images; skipping explicit cover upload.")
+
+            if should_upload_cover(cover_image_path, content_images):
                 print(f"🖼️ Uploading cover image: {cover_image_path}...")
                 try:
                     # check if file exists
@@ -327,12 +630,13 @@ def publish(
                             "div.btn-upload-handle.upload-handler"
                         ).first
                         if upload_tab.is_visible():
-                            upload_tab.click()
+                            click_locator_with_fallback(upload_tab, "Upload Local button")
                         else:
                             # Fallback text search
-                            page.locator("div, span").filter(
+                            upload_text = page.locator("div, span").filter(
                                 has_text="本地上传"
-                            ).last.click()
+                            ).last
+                            click_locator_with_fallback(upload_text, "本地上传 button")
                         time.sleep(1)
 
                         # 3.3 Upload File
@@ -355,14 +659,13 @@ def publish(
                             confirm_btn.wait_for(state="visible", timeout=30000)
                             # Sometimes button is disabled while processing
                             time.sleep(2)
-                            confirm_btn.click()
+                            if not click_locator_with_fallback(confirm_btn, "upload confirm button"):
+                                raise RuntimeError("upload confirm click failed")
                             print("  ✅ Cover image uploaded and confirmed.")
                         except Exception as e:
                             print(f"  ⚠️ Confirm button issue: {e}")
-                            # Try fallback confirm button
-                            page.locator("button.byte-btn-primary").filter(
-                                has_text="确定"
-                            ).last.click()
+                            if not click_button_by_text(page, ["确定", "确认"], "fallback upload confirm button"):
+                                raise
 
                         time.sleep(2)
                         take_screenshot("cover_uploaded")
@@ -390,7 +693,7 @@ def publish(
                     print(f"⚠️ Failed to select no cover: {e}")
 
             # 4. Final Publish Step (Optimized Two-Step Flow)
-            if not dry_run:
+            if auto_publish and not dry_run:
                 print("🚀 Submitting article (Final Step)...")
                 try:
                     take_screenshot("before_publish_click")
@@ -482,8 +785,17 @@ def publish(
                     traceback.print_exc()
                     return False
             else:
-                print("🚧 Dry run: Skipping final publish click.")
-                time.sleep(5)
+                print("🛑 Manual review mode: skipping final publish click.")
+                print("   Please review the article in Chrome and click Publish manually.")
+                if headless:
+                    print("   Headless mode cannot stay open for manual publishing.")
+                else:
+                    print("   Press Ctrl+C in this terminal after you are done.")
+                    try:
+                        while True:
+                            time.sleep(5)
+                    except KeyboardInterrupt:
+                        print("\n✅ Manual review finished.")
 
             print("✨ Operation completed.")
             return True
@@ -495,11 +807,14 @@ def publish(
             traceback.print_exc()
             return False
         finally:
-            if not headless:
+            if not headless and auto_publish:
                 print("browser open for inspection. Closing in 60s...")
                 time.sleep(60)
             if context:
-                context.close()
+                try:
+                    context.close()
+                except Exception as e:
+                    print(f"⚠️ Browser context close warning: {e}")
 
 
 def main():
@@ -522,22 +837,43 @@ def main():
         action="store_true",
         help="Paste content as raw text (no HTML conversion)",
     )
+    parser.add_argument(
+        "--auto-publish",
+        action="store_true",
+        help="Click the final publish buttons automatically after filling the article",
+    )
+    parser.add_argument(
+        "--debug-screenshots",
+        action="store_true",
+        help="Save step-by-step debug screenshots under output/toutiao-publisher-debug/",
+    )
+    parser.add_argument(
+        "--debug-dir",
+        help="Directory for debug screenshots when --debug-screenshots is enabled",
+    )
 
     args = parser.parse_args()
 
     content = args.content
+    content_base_dir = Path.cwd()
     if content and os.path.exists(content):
-        with open(content, "r", encoding="utf-8") as f:
+        content_path = Path(content).resolve()
+        content_base_dir = content_path.parent
+        with open(content_path, "r", encoding="utf-8") as f:
             content = f.read()
 
     publish(
         title=args.title,
         content_html=content,
+        content_base_dir=content_base_dir,
         cover_image_path=args.cover,
         dry_run=args.dry_run,
         headless=args.headless,
         no_cover=args.no_cover,
         raw=args.raw,
+        auto_publish=args.auto_publish,
+        debug_screenshots=args.debug_screenshots,
+        debug_dir=args.debug_dir,
     )
 
 
