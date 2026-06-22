@@ -2,6 +2,13 @@
 
 本项目的所有重要更改都将记录在此文件中。
 
+## [1.4.2] - 2026-06-22
+### 🚀 新增功能
+- **Excalidraw Visual Designer** (`skills/excalidraw-visual-designer`):
+  - **可编辑视觉设计**: 支持通过 Excalidraw 创建和修改图表、流程图、架构草图、信息图、教学视觉和宣传版式。
+  - **Clipboard JSON 导入**: 新增 `scripts/make_excalidraw_clipboard.py`，可将任务级场景规格转换为 Excalidraw clipboard JSON。
+  - **连线质量规则**: 内置箭头绕行、标签避让、截图复查和版面层级检查流程，降低复杂图形中的遮挡与交叉问题。
+
 ## [1.4.1] - 2026-06-16
 ### 🚀 新增功能
 - **Video Tutorial Maker** (`skills/video-tutorial-maker`):

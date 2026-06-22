@@ -50,12 +50,18 @@ Super Publisher 是一个专为 Agent 设计的插件，旨在实现自动化的
 - **音画字幕同步**：按场景生成 TTS、时间线字幕与固定时长视频片段，避免多段拼接后的字幕或语音漂移。
 - **平台版本适配**：默认输出 1920x1080 横屏 MP4，并在需要时指导生成 9:16 等平台变体。
 
+### Excalidraw Visual Designer (`skills/excalidraw-visual-designer`)
+- **可编辑视觉设计**：通过 Excalidraw 创建或修改可编辑的图表、流程图、架构草图、信息图和海报版式。
+- **剪贴板 JSON 导入**：内置通用生成脚本，可将场景规格转换为 Excalidraw clipboard JSON，减少复杂布局的手工拖拽。
+- **连线与版面质量控制**：强调连线绕行、标签可读性、视觉层级和截图复查，降低箭头穿插和文字重叠问题。
+
 ## 📂 项目结构
 
 ```
 .
 ├── .claude-plugin/      # Claude 插件配置文件
 ├── skills/              # Agent Skills 目录
+│   ├── excalidraw-visual-designer/ # Excalidraw 可编辑视觉设计 Skill
 │   ├── gif-maker/            # [NEW] GIF 动图生成 Skill
 │   ├── grid-sticker-generator/ # [NEW] 通用网格表情生成 Skill
 │   ├── sticker-factory/      # [NEW] 表情包自动化工厂 Skill
@@ -115,6 +121,7 @@ cp -r skills/* /path/to/your/workspace/.agents/skills/
 > "帮我把这篇文章发布到头条号"
 > "检查头条号登录状态"
 > "把这个产品功能写成一支 16:9 教程视频，并生成旁白和字幕"
+> "用 Excalidraw 画一张这个系统架构的可编辑示意图"
 
 ## 💡 最佳实践 (Best Practices)
 
