@@ -15,17 +15,25 @@ if [ -n "$(git status --porcelain)" ]; then
     fi
 fi
 
-# Automatically extract the latest version from CHANGELOG.md
-LATEST_VERSION=$(grep -E '^##[[:space:]]*\[?[0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md | head -n 1 | sed -E 's/^##[[:space:]]*\[?([0-9]+\.[0-9]+\.[0-9]+).*$/\1/')
+# Allow version/tag to be passed as a command-line argument
+VERSION_ARG="$1"
+VERSION=""
 
-if [ -z "$LATEST_VERSION" ]; then
-    echo "❌ Error: Could not find any version header (e.g., '## [1.4.2]') in CHANGELOG.md."
-    read -p "Enter version manually (e.g., 1.4.2): " LATEST_VERSION
+if [ -n "$VERSION_ARG" ]; then
+    VERSION="$VERSION_ARG"
+else
+    # Automatically extract the latest version from CHANGELOG.md
+    LATEST_VERSION=$(grep -E '^##[[:space:]]*\[?[0-9]+\.[0-9]+\.[0-9]+' CHANGELOG.md | head -n 1 | sed -E 's/^##[[:space:]]*\[?([0-9]+\.[0-9]+\.[0-9]+).*$/\1/')
+
+    if [ -z "$LATEST_VERSION" ]; then
+        echo "❌ Error: Could not find any version header (e.g., '## [1.4.2]') in CHANGELOG.md."
+        read -p "Enter version manually (e.g., 1.4.2): " LATEST_VERSION
+    fi
+
+    # Ask for version confirmation
+    read -p "Confirm release version [default: $LATEST_VERSION]: " user_version
+    VERSION=${user_version:-$LATEST_VERSION}
 fi
-
-# Ask for version confirmation
-read -p "Confirm release version [default: $LATEST_VERSION]: " user_version
-VERSION=${user_version:-$LATEST_VERSION}
 
 # Standardize tag name with 'v' prefix
 if [[ ! "$VERSION" =~ ^v ]]; then
