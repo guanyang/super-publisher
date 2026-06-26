@@ -81,10 +81,19 @@ Super Publisher 是一个专为 Agent 设计的插件，旨在实现自动化的
 
 ### 安装插件
 
-本插件遵循 Claude Plugin 规范，支持多种 Agent 环境加载。
+#### 1. 快速安装 (推荐)
+对于支持模块化技能（Skills）的 AI 助手（如 Claude Code 等），推荐直接使用 Vercel 的 `skills` CLI 在你的项目工作区中一键安装本仓库的技能，无需手动复制或克隆：
 
-#### 1. Claude Code
-在启动 Claude Code 之后，执行以下命令加载插件：
+```bash
+# 安装本仓库中所有的技能到项目中
+npx skills@latest add guanyang/super-publisher
+
+# 仅安装某个特定技能 (例如 toutiao-publisher 技能)
+npx skills@latest add guanyang/super-publisher --skill toutiao-publisher
+```
+
+#### 2. Claude Code 插件市场
+本插件同时遵循 Claude Plugin 规范，支持通过插件市场安装（适用于需要使用完整插件能力的场景）：
 
 ```bash
 # 添加插件市场
@@ -93,7 +102,7 @@ Super Publisher 是一个专为 Agent 设计的插件，旨在实现自动化的
 /plugin install super-publisher@super-publisher
 ```
 
-#### 2. 本地安装 / 其他 Agent
+#### 3. 本地安装 / 其他 Agent
 可以使用安装脚本，一键将 skills 软链接（symlink）到指定的 Agent 技能目录下：
 
 ```bash
