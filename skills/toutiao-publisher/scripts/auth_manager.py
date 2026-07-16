@@ -6,12 +6,12 @@ Handles Toutiao login and browser state persistence
 
 import json
 import time
-import argparse
+import contextlib
 import shutil
-import re
 import sys
 from pathlib import Path
-from typing import Optional, Dict, Any
+from typing import Dict, Any
+from urllib.parse import urlparse
 
 from patchright.sync_api import sync_playwright, BrowserContext
 
@@ -19,14 +19,43 @@ from patchright.sync_api import sync_playwright, BrowserContext
 sys.path.insert(0, str(Path(__file__).parent))
 
 from config import (
-    BROWSER_STATE_DIR,
-    STATE_FILE,
-    AUTH_INFO_FILE,
     DATA_DIR,
     LOGIN_URL,
-    HOME_URL,
+    PUBLISH_URL,
 )
 from browser_utils import BrowserFactory
+from cli_utils import configure_json_argument_parser
+from profile_lock import (
+    ProfileLock,
+    ProfileLockedError,
+    ensure_private_directory,
+    ensure_private_file,
+)
+
+
+AUTH_COOKIE_DOMAINS = ("toutiao.com", "bytedance.com", "snssdk.com")
+AUTH_PROBE_INTERVAL_SECONDS = 3
+EXIT_OK = 0
+EXIT_FAILURE = 1
+EXIT_INVALID_STATE = 2
+EXIT_PROFILE_LOCKED = 3
+
+
+def is_login_url(url: str) -> bool:
+    """Return whether Toutiao redirected the browser to an authentication page."""
+    normalized = (url or "").lower()
+    return "auth/page/login" in normalized or "sso.toutiao.com" in normalized
+
+
+def is_authenticated_url(url: str) -> bool:
+    """Return whether a URL belongs to the authenticated creator console."""
+    if not url or is_login_url(url):
+        return False
+
+    parsed = urlparse(url)
+    return parsed.hostname == "mp.toutiao.com" and parsed.path.startswith(
+        "/profile_v4"
+    )
 
 
 class AuthManager:
@@ -34,19 +63,44 @@ class AuthManager:
     Manages authentication and browser state for Toutiao
     """
 
-    def __init__(self):
+    def __init__(self, data_dir=None):
         """Initialize the authentication manager"""
-        # Ensure directories exist
-        DATA_DIR.mkdir(parents=True, exist_ok=True)
-        BROWSER_STATE_DIR.mkdir(parents=True, exist_ok=True)
+        self.data_dir = Path(data_dir) if data_dir is not None else DATA_DIR
+        self.browser_state_dir = self.data_dir / "browser_state"
+        self.browser_profile_dir = self.browser_state_dir / "browser_profile"
+        self.state_file = self.browser_state_dir / "state.json"
+        self.auth_info_file = self.data_dir / "auth_info.json"
+        self.profile_lock_file = self.data_dir / "profile.lock"
+        self.last_status = "unknown"
 
-        self.state_file = STATE_FILE
-        self.auth_info_file = AUTH_INFO_FILE
-        self.browser_state_dir = BROWSER_STATE_DIR
+        # Ensure directories exist
+        ensure_private_directory(self.data_dir)
+        ensure_private_directory(self.browser_state_dir)
+        ensure_private_directory(self.browser_profile_dir)
+        ensure_private_file(self.state_file)
+        ensure_private_file(self.auth_info_file)
 
     def is_authenticated(self) -> bool:
-        """Check if valid authentication exists"""
+        """Check whether reusable Toutiao cookies exist in storage state."""
         if not self.state_file.exists():
+            return False
+
+        try:
+            with open(self.state_file, "r") as f:
+                state = json.load(f)
+        except (OSError, json.JSONDecodeError, TypeError):
+            return False
+
+        cookies = state.get("cookies", [])
+        has_toutiao_cookie = any(
+            cookie.get("value")
+            and any(
+                domain in cookie.get("domain", "").lower()
+                for domain in AUTH_COOKIE_DOMAINS
+            )
+            for cookie in cookies
+        )
+        if not has_toutiao_cookie:
             return False
 
         # Check if state file is not too old (7 days)
@@ -80,7 +134,12 @@ class AuthManager:
 
         return info
 
-    def setup_auth(self, headless: bool = False, timeout_minutes: int = 10) -> bool:
+    def setup_auth(
+        self,
+        headless: bool = False,
+        timeout_minutes: int = 10,
+        profile_lock=None,
+    ) -> bool:
         """
         Perform interactive authentication setup
 
@@ -102,19 +161,29 @@ class AuthManager:
 
             # Launch using factory
             context = BrowserFactory.launch_persistent_context(
-                playwright, headless=headless
+                playwright,
+                headless=headless,
+                user_data_dir=str(self.browser_profile_dir),
+                lock_path=str(self.profile_lock_file),
+                state_file=str(self.state_file),
+                profile_lock=profile_lock,
             )
 
-            # Navigate to Toutiao Login
+            # Probe a protected page first. Visiting the login page is not a
+            # reliable session check because it may remain visible even when
+            # the persistent profile already has valid cookies.
             page = context.new_page()
-            page.goto(LOGIN_URL, wait_until="domcontentloaded")
+            page.goto(PUBLISH_URL, wait_until="domcontentloaded")
 
-            # Check if already authenticated (redirected to home)
-            if "mp.toutiao.com" in page.url and "auth/page/login" not in page.url:
+            detected_url = self.detect_authenticated_url(context)
+            if detected_url:
                 print("  ✅ Already authenticated!")
-                self._save_browser_state(context)
-                self._save_auth_info()
+                self.save_auth_state(context)
+                self.last_status = "authenticated"
                 return True
+
+            if not is_login_url(page.url):
+                page.goto(LOGIN_URL, wait_until="domcontentloaded")
 
             # Wait for manual login
             print("\n  ⏳ Please log in to your Toutiao account...")
@@ -127,50 +196,44 @@ class AuthManager:
                 # timeout_ms = int(timeout_minutes * 60 * 1000)
 
                 start_time = time.time()
+                last_probe_time = start_time - AUTH_PROBE_INTERVAL_SECONDS
                 while time.time() - start_time < (timeout_minutes * 60):
-                    # Check all pages in the context
-                    login_detected = False
-                    for p in context.pages:
-                        try:
-                            current_url = p.url
+                    detected_url = self.detect_authenticated_url(context)
 
-                            # Check for success indicators
-                            is_login_page = "auth/page/login" in current_url
-                            is_toutiao_domain = "mp.toutiao.com" in current_url
-                            is_profile_page = "profile_v4" in current_url
+                    now = time.time()
+                    if (
+                        not detected_url
+                        and now - last_probe_time >= AUTH_PROBE_INTERVAL_SECONDS
+                    ):
+                        detected_url = self.detect_authenticated_url(
+                            context, include_network_probe=True
+                        )
+                        last_probe_time = now
 
-                            # Check URL match
-                            if (
-                                not is_login_page and is_toutiao_domain
-                            ) or is_profile_page:
-                                print(
-                                    f"  ✅ Login successful! (Detected in tab: {current_url})"
-                                )
-                                login_detected = True
-                                break
-                        except Exception:
-                            continue
-
-                    if login_detected:
-                        # Wait a bit for cookies to settle
-                        time.sleep(3)
-
-                        # Save authentication state
-                        self._save_browser_state(context)
-                        self._save_auth_info()
+                    if detected_url:
+                        print(f"  ✅ Login successful! (Detected: {detected_url})")
+                        self.save_auth_state(context)
+                        self.last_status = "authenticated"
                         return True
 
                     time.sleep(1)
 
                 print("  ❌ Timeout waiting for login redirect")
+                self.last_status = "login_timeout"
                 return False
 
             except Exception as e:
                 print(f"  ❌ Authentication error: {e}")
+                self.last_status = "authentication_failed"
                 return False
 
+        except ProfileLockedError as e:
+            print(f"  ❌ {e}")
+            self.last_status = "profile_locked"
+            return False
         except Exception as e:
             print(f"  ❌ Error: {e}")
+            self.last_status = "authentication_failed"
             return False
 
         finally:
@@ -187,15 +250,54 @@ class AuthManager:
                 except Exception:
                     pass
 
+    def detect_authenticated_url(
+        self, context: BrowserContext, include_network_probe: bool = False
+    ):
+        """Return an authenticated console URL from tabs or a protected probe."""
+        authenticated_page = self._find_authenticated_page(context)
+        if authenticated_page:
+            return authenticated_page.url
+        if include_network_probe:
+            return self._probe_authenticated_session(context)
+        return None
+
+    def _find_authenticated_page(self, context: BrowserContext):
+        """Find an authenticated creator-console tab in the current context."""
+        for page in context.pages:
+            try:
+                if is_authenticated_url(page.url):
+                    return page
+            except Exception:
+                continue
+        return None
+
+    def _probe_authenticated_session(self, context: BrowserContext):
+        """Probe a protected URL without navigating away from the QR login tab."""
+        try:
+            response = context.request.get(
+                PUBLISH_URL,
+                timeout=10000,
+                fail_on_status_code=False,
+            )
+            return response.url if is_authenticated_url(response.url) else None
+        except Exception:
+            return None
+
     def _save_browser_state(self, context: BrowserContext):
         """Save browser state to disk"""
         try:
             # Save storage state (cookies, localStorage)
             context.storage_state(path=str(self.state_file))
+            ensure_private_file(self.state_file)
             print(f"  💾 Saved browser state to: {self.state_file}")
         except Exception as e:
             print(f"  ❌ Failed to save browser state: {e}")
             raise
+
+    def save_auth_state(self, context: BrowserContext):
+        """Persist browser storage and authentication metadata together."""
+        self._save_browser_state(context)
+        self._save_auth_info()
 
     def _save_auth_info(self):
         """Save authentication metadata"""
@@ -206,42 +308,64 @@ class AuthManager:
             }
             with open(self.auth_info_file, "w") as f:
                 json.dump(info, f, indent=2)
+            ensure_private_file(self.auth_info_file)
         except Exception:
             pass  # Non-critical
 
-    def clear_auth(self) -> bool:
+    def clear_auth(self, confirmed: bool = False) -> bool:
         """
         Clear all authentication data
 
         Returns:
             True if cleared successfully
         """
-        print("🗑️ Clearing authentication data...")
-
-        try:
-            # Remove browser state
-            if self.state_file.exists():
-                self.state_file.unlink()
-                print("  ✅ Removed browser state")
-
-            # Remove auth info
-            if self.auth_info_file.exists():
-                self.auth_info_file.unlink()
-                print("  ✅ Removed auth info")
-
-            # Clear entire browser state directory
-            if self.browser_state_dir.exists():
-                shutil.rmtree(self.browser_state_dir)
-                self.browser_state_dir.mkdir(parents=True, exist_ok=True)
-                print("  ✅ Cleared browser data")
-
-            return True
-
-        except Exception as e:
-            print(f"  ❌ Error clearing auth: {e}")
+        if not confirmed:
+            print("❌ Refusing to clear the shared profile without explicit confirmation.")
+            print("   Re-run the command with --yes after the user confirms.")
+            self.last_status = "confirmation_required"
             return False
 
-    def re_auth(self, headless: bool = False, timeout_minutes: int = 10) -> bool:
+        print("🗑️ Clearing authentication data...")
+        profile_lock = ProfileLock(self.profile_lock_file)
+
+        try:
+            profile_lock.acquire()
+            self._clear_auth_files()
+            self.last_status = "cleared"
+            return True
+
+        except ProfileLockedError as e:
+            print(f"  ❌ {e}")
+            self.last_status = "profile_locked"
+            return False
+        except Exception as e:
+            print(f"  ❌ Error clearing auth: {e}")
+            self.last_status = "clear_failed"
+            return False
+        finally:
+            profile_lock.release()
+
+    def _clear_auth_files(self):
+        if self.state_file.exists():
+            self.state_file.unlink()
+            print("  ✅ Removed browser state")
+
+        if self.auth_info_file.exists():
+            self.auth_info_file.unlink()
+            print("  ✅ Removed auth info")
+
+        if self.browser_state_dir.exists():
+            shutil.rmtree(self.browser_state_dir)
+        ensure_private_directory(self.browser_state_dir)
+        ensure_private_directory(self.browser_profile_dir)
+        print("  ✅ Cleared browser data")
+
+    def re_auth(
+        self,
+        headless: bool = False,
+        timeout_minutes: int = 10,
+        confirmed: bool = False,
+    ) -> bool:
         """
         Perform re-authentication (clear and setup)
 
@@ -253,20 +377,33 @@ class AuthManager:
             True if successful
         """
         print("🔄 Starting re-authentication...")
+        if not confirmed:
+            print("❌ Refusing to clear the shared profile without explicit confirmation.")
+            print("   Re-run the command with --yes after the user confirms.")
+            self.last_status = "confirmation_required"
+            return False
 
-        # Clear existing auth
-        self.clear_auth()
-
-        # Setup new auth
-        return self.setup_auth(headless, timeout_minutes)
+        profile_lock = ProfileLock(self.profile_lock_file)
+        try:
+            profile_lock.acquire()
+            print("🗑️ Clearing authentication data...")
+            self._clear_auth_files()
+            return self.setup_auth(
+                headless,
+                timeout_minutes,
+                profile_lock=profile_lock,
+            )
+        except ProfileLockedError as e:
+            print(f"  ❌ {e}")
+            self.last_status = "profile_locked"
+            return False
+        finally:
+            profile_lock.release()
 
     def validate_auth(self) -> bool:
         """
         Validate that stored authentication works
         """
-        if not self.is_authenticated():
-            return False
-
         print("🔍 Validating authentication...")
 
         playwright = None
@@ -277,23 +414,36 @@ class AuthManager:
 
             # Launch using factory
             context = BrowserFactory.launch_persistent_context(
-                playwright, headless=True
+                playwright,
+                headless=True,
+                user_data_dir=str(self.browser_profile_dir),
+                lock_path=str(self.profile_lock_file),
+                state_file=str(self.state_file),
             )
 
-            # Try to access HOME_URL
+            # A protected creator URL is a stronger signal than the public
+            # home page and can also recover cookies from browser_profile when
+            # state.json has not been exported yet.
             page = context.new_page()
-            page.goto(HOME_URL, wait_until="domcontentloaded", timeout=30000)
+            page.goto(PUBLISH_URL, wait_until="domcontentloaded", timeout=30000)
 
-            # Check if we are redirected to login
-            if "auth/page/login" in page.url:
+            if not is_authenticated_url(page.url):
                 print("  ❌ Authentication is invalid (redirected to login)")
+                self.last_status = "not_authenticated"
                 return False
-            else:
-                print("  ✅ Authentication is valid")
-                return True
 
+            self.save_auth_state(context)
+            print("  ✅ Authentication is valid")
+            self.last_status = "authenticated"
+            return True
+
+        except ProfileLockedError as e:
+            print(f"  ❌ {e}")
+            self.last_status = "profile_locked"
+            return False
         except Exception as e:
             print(f"  ❌ Validation failed: {e}")
+            self.last_status = "validation_failed"
             return False
 
         finally:
@@ -309,11 +459,33 @@ class AuthManager:
                     pass
 
 
-def main():
-    """Command-line interface for authentication management"""
-    parser = argparse.ArgumentParser(description="Manage Toutiao authentication")
+def _add_json_argument(parser):
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Write one machine-readable JSON result to stdout",
+    )
 
-    subparsers = parser.add_subparsers(dest="command", help="Commands")
+
+def _exit_code_for_status(status):
+    if status == "profile_locked":
+        return EXIT_PROFILE_LOCKED
+    if status in {"not_authenticated", "confirmation_required"}:
+        return EXIT_INVALID_STATE
+    return EXIT_FAILURE
+
+
+def main(argv=None):
+    """Command-line interface for authentication management"""
+    cli_argv = list(argv if argv is not None else sys.argv[1:])
+    parser_class = configure_json_argument_parser(cli_argv)
+    parser = parser_class(description="Manage Toutiao authentication")
+
+    subparsers = parser.add_subparsers(
+        dest="command",
+        help="Commands",
+        parser_class=parser_class,
+    )
 
     # Setup command
     setup_parser = subparsers.add_parser("setup", help="Setup authentication")
@@ -326,15 +498,31 @@ def main():
         default=10,
         help="Login timeout in minutes (default: 10)",
     )
+    _add_json_argument(setup_parser)
 
     # Status command
-    subparsers.add_parser("status", help="Check authentication status")
+    status_parser = subparsers.add_parser("status", help="Check authentication status")
+    status_parser.add_argument(
+        "--verify",
+        action="store_true",
+        help="Launch the stored browser profile and verify it against Toutiao",
+    )
+    _add_json_argument(status_parser)
 
     # Validate command
-    subparsers.add_parser("validate", help="Validate authentication")
+    validate_parser = subparsers.add_parser(
+        "validate", help="Validate authentication"
+    )
+    _add_json_argument(validate_parser)
 
     # Clear command
-    subparsers.add_parser("clear", help="Clear authentication")
+    clear_parser = subparsers.add_parser("clear", help="Clear authentication")
+    clear_parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Confirm clearing the profile shared by every local Agent",
+    )
+    _add_json_argument(clear_parser)
 
     # Re-auth command
     reauth_parser = subparsers.add_parser(
@@ -346,51 +534,105 @@ def main():
         default=10,
         help="Login timeout in minutes (default: 10)",
     )
+    reauth_parser.add_argument(
+        "--yes",
+        action="store_true",
+        help="Confirm clearing the profile shared by every local Agent",
+    )
+    _add_json_argument(reauth_parser)
 
-    args = parser.parse_args()
-
-    # Initialize manager
-    auth = AuthManager()
-
-    # Execute command
-    if args.command == "setup":
-        if auth.setup_auth(headless=args.headless, timeout_minutes=args.timeout):
-            print("\n✅ Authentication setup complete!")
-        else:
-            print("\n❌ Authentication setup failed")
-            exit(1)
-
-    elif args.command == "status":
-        info = auth.get_auth_info()
-        print("\n🔐 Authentication Status:")
-        print(f"  Authenticated: {'Yes' if info['authenticated'] else 'No'}")
-        if info.get("state_age_hours"):
-            print(f"  State age: {info['state_age_hours']:.1f} hours")
-        if info.get("authenticated_at_iso"):
-            print(f"  Last auth: {info['authenticated_at_iso']}")
-        print(f"  State file: {info['state_file']}")
-
-    elif args.command == "validate":
-        if auth.validate_auth():
-            print("Authentication is valid and working")
-        else:
-            print("Authentication is invalid or expired")
-            print("Run: auth_manager.py setup")
-
-    elif args.command == "clear":
-        if auth.clear_auth():
-            print("Authentication cleared")
-
-    elif args.command == "reauth":
-        if auth.re_auth(timeout_minutes=args.timeout):
-            print("\n✅ Re-authentication complete!")
-        else:
-            print("\n❌ Re-authentication failed")
-            exit(1)
-
-    else:
+    args = parser.parse_args(cli_argv)
+    if not args.command:
         parser.print_help()
+        return EXIT_INVALID_STATE
+
+    auth = AuthManager()
+    json_output = bool(getattr(args, "json", False))
+    json_stream = sys.stdout
+    output_context = (
+        contextlib.redirect_stdout(sys.stderr)
+        if json_output
+        else contextlib.nullcontext()
+    )
+    payload = {"ok": False, "command": args.command, "status": "failed"}
+    exit_code = EXIT_FAILURE
+
+    with output_context:
+        if args.command == "setup":
+            ok = auth.setup_auth(
+                headless=args.headless,
+                timeout_minutes=args.timeout,
+            )
+            print(
+                "\n✅ Authentication setup complete!"
+                if ok
+                else "\n❌ Authentication setup failed"
+            )
+            payload.update(ok=ok, status=auth.last_status)
+            exit_code = EXIT_OK if ok else _exit_code_for_status(auth.last_status)
+
+        elif args.command == "status":
+            live_valid = auth.validate_auth() if args.verify else None
+            info = auth.get_auth_info()
+            valid = live_valid if args.verify else info["authenticated"]
+            status = auth.last_status if args.verify else (
+                "authenticated" if valid else "not_authenticated"
+            )
+            print("\n🔐 Authentication Status:")
+            print(f"  Stored session: {'Yes' if info['authenticated'] else 'No'}")
+            if info.get("state_age_hours") is not None:
+                print(f"  State age: {info['state_age_hours']:.1f} hours")
+            if info.get("authenticated_at_iso"):
+                print(f"  Last auth: {info['authenticated_at_iso']}")
+            print(f"  State file: {info['state_file']}")
+            if args.verify:
+                print(f"  Live check: {'Valid' if live_valid else 'Invalid or expired'}")
+            payload.update(
+                ok=bool(valid),
+                status=status,
+                stored_session=bool(info["authenticated"]),
+                live_valid=live_valid,
+                state_file=info["state_file"],
+                state_age_hours=info.get("state_age_hours"),
+            )
+            exit_code = EXIT_OK if valid else _exit_code_for_status(status)
+
+        elif args.command == "validate":
+            ok = auth.validate_auth()
+            print(
+                "Authentication is valid and working"
+                if ok
+                else "Authentication is invalid or expired"
+            )
+            if not ok:
+                print("Run: auth_manager.py setup")
+            payload.update(ok=ok, status=auth.last_status)
+            exit_code = EXIT_OK if ok else _exit_code_for_status(auth.last_status)
+
+        elif args.command == "clear":
+            ok = auth.clear_auth(confirmed=args.yes)
+            if ok:
+                print("Authentication cleared")
+            payload.update(ok=ok, status=auth.last_status)
+            exit_code = EXIT_OK if ok else _exit_code_for_status(auth.last_status)
+
+        elif args.command == "reauth":
+            ok = auth.re_auth(
+                timeout_minutes=args.timeout,
+                confirmed=args.yes,
+            )
+            print(
+                "\n✅ Re-authentication complete!"
+                if ok
+                else "\n❌ Re-authentication failed"
+            )
+            payload.update(ok=ok, status=auth.last_status)
+            exit_code = EXIT_OK if ok else _exit_code_for_status(auth.last_status)
+
+    if json_output:
+        print(json.dumps(payload, ensure_ascii=False), file=json_stream)
+    return exit_code
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

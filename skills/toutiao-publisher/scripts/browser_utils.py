@@ -6,10 +6,32 @@ Handles browser launching, stealth features, and common interactions
 import json
 import time
 import random
-from typing import Optional, List
+from pathlib import Path
 
 from patchright.sync_api import Playwright, BrowserContext, Page
-from config import BROWSER_PROFILE_DIR, STATE_FILE, BROWSER_ARGS, USER_AGENT
+from config import BROWSER_PROFILE_DIR, PROFILE_LOCK_FILE, STATE_FILE, BROWSER_ARGS
+from profile_lock import ProfileLock
+
+
+class LockedBrowserContext:
+    """Release the shared profile lock when the browser context closes."""
+
+    def __init__(self, context, profile_lock):
+        self._context = context
+        self._profile_lock = profile_lock
+        self._closed = False
+
+    def __getattr__(self, name):
+        return getattr(self._context, name)
+
+    def close(self):
+        if self._closed:
+            return
+        try:
+            self._context.close()
+        finally:
+            self._profile_lock.release()
+            self._closed = True
 
 
 class BrowserFactory:
@@ -20,34 +42,42 @@ class BrowserFactory:
         playwright: Playwright,
         headless: bool = True,
         user_data_dir: str = str(BROWSER_PROFILE_DIR),
+        lock_path: str = str(PROFILE_LOCK_FILE),
+        state_file: str = str(STATE_FILE),
+        profile_lock=None,
     ) -> BrowserContext:
         """
         Launch a persistent browser context with anti-detection features
         and cookie workaround.
         """
-        # Launch persistent context
-        context = playwright.chromium.launch_persistent_context(
-            user_data_dir=user_data_dir,
-            channel="chrome",  # Use real Chrome
-            headless=headless,
-            no_viewport=True,
-            ignore_default_args=["--enable-automation"],
-            user_agent=USER_AGENT,
-            args=BROWSER_ARGS,
-        )
+        profile_lock = profile_lock or ProfileLock(lock_path)
+        if not profile_lock.acquired:
+            profile_lock.acquire()
+        try:
+            context = playwright.chromium.launch_persistent_context(
+                user_data_dir=user_data_dir,
+                channel="chrome",  # Use real Chrome
+                headless=headless,
+                no_viewport=True,
+                ignore_default_args=["--enable-automation"],
+                args=BROWSER_ARGS,
+            )
 
-        # Cookie Workaround for Playwright bug #36139
-        # Session cookies (expires=-1) don't persist in user_data_dir automatically
-        BrowserFactory._inject_cookies(context)
-
-        return context
+            # Cookie Workaround for Playwright bug #36139
+            # Session cookies (expires=-1) don't persist in user_data_dir automatically
+            BrowserFactory._inject_cookies(context, state_file=state_file)
+            return LockedBrowserContext(context, profile_lock)
+        except Exception:
+            profile_lock.release()
+            raise
 
     @staticmethod
-    def _inject_cookies(context: BrowserContext):
+    def _inject_cookies(context: BrowserContext, state_file=STATE_FILE):
         """Inject cookies from state.json if available"""
-        if STATE_FILE.exists():
+        state_file = Path(state_file)
+        if state_file.exists():
             try:
-                with open(STATE_FILE, "r") as f:
+                with open(state_file, "r") as f:
                     state = json.load(f)
                     if "cookies" in state and len(state["cookies"]) > 0:
                         context.add_cookies(state["cookies"])

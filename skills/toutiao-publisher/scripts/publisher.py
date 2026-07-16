@@ -4,26 +4,159 @@ Publisher script for Toutiao
 Navigates to the publish page with authenticated session.
 """
 
-import sys
 import argparse
-import time
-from pathlib import Path
+import contextlib
+import html as html_lib
+import json
 import os
 import platform
 import shutil
 import subprocess
+import sys
 import tempfile
+import time
+from dataclasses import dataclass
+from pathlib import Path
+from typing import Optional
 
 # Add parent directory to path
 sys.path.insert(0, str(Path(__file__).parent))
 
 from config import PUBLISH_URL
 from patchright.sync_api import sync_playwright
-from auth_manager import AuthManager
+from auth_manager import (
+    AUTH_PROBE_INTERVAL_SECONDS,
+    AuthManager,
+    is_login_url,
+)
 from browser_utils import BrowserFactory
-
-
+from cli_utils import configure_json_argument_parser
+from profile_lock import ProfileLockedError
 from md2html import convert_with_images
+
+
+EXIT_OK = 0
+EXIT_FAILURE = 1
+EXIT_INVALID_INPUT = 2
+EXIT_PROFILE_LOCKED = 3
+PUBLISH_MODES = ("manual", "auto", "validate")
+LOCAL_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
+
+
+class InputValidationError(ValueError):
+    pass
+
+
+@dataclass(frozen=True)
+class PreparedArticle:
+    title: Optional[str]
+    content: Optional[str]
+    content_base_dir: Path
+    cover_image_path: Optional[str]
+    html: str
+    images: list[dict[str, str]]
+
+
+@dataclass(frozen=True)
+class PublishResult:
+    ok: bool
+    status: str
+    message: str
+
+
+def _validate_local_image(path, label):
+    image_path = Path(path).expanduser().resolve()
+    if not image_path.is_file():
+        raise InputValidationError(f"{label} not found: {image_path}")
+    if image_path.suffix.lower() not in LOCAL_IMAGE_SUFFIXES:
+        raise InputValidationError(
+            f"{label} must be PNG, JPG, JPEG, GIF, or WEBP: {image_path}"
+        )
+    if not os.access(image_path, os.R_OK):
+        raise InputValidationError(f"{label} is not readable: {image_path}")
+    return image_path
+
+
+def prepare_article(
+    title=None,
+    content_file=None,
+    content_text=None,
+    cover_image_path=None,
+    mode="manual",
+    headless=False,
+    no_cover=False,
+    raw=False,
+):
+    """Validate and convert article input before opening Chrome."""
+    if mode not in PUBLISH_MODES:
+        raise InputValidationError(f"Unknown mode: {mode}")
+    if headless and mode != "auto":
+        raise InputValidationError("--headless is only valid with --mode auto")
+    if content_file and content_text is not None:
+        raise InputValidationError("Use either --content-file or --content-text, not both")
+    if no_cover and cover_image_path:
+        raise InputValidationError("Use either --no-cover or --cover, not both")
+
+    has_article_input = any(
+        value is not None for value in (title, content_file, content_text, cover_image_path)
+    )
+    if mode in {"auto", "validate"} or has_article_input:
+        if title is None:
+            raise InputValidationError("--title is required for article input")
+        if content_file is None and content_text is None:
+            raise InputValidationError(
+                "--content-file or --content-text is required for article input"
+            )
+
+    normalized_title = title.strip() if title is not None else None
+    if normalized_title is not None and not 2 <= len(normalized_title) <= 30:
+        raise InputValidationError("Toutiao title must contain 2-30 characters")
+
+    content = None
+    content_base_dir = Path.cwd()
+    if content_file is not None:
+        content_path = Path(content_file).expanduser().resolve()
+        if not content_path.is_file():
+            raise InputValidationError(f"Content file not found: {content_path}")
+        if not os.access(content_path, os.R_OK):
+            raise InputValidationError(f"Content file is not readable: {content_path}")
+        content = content_path.read_text(encoding="utf-8")
+        content_base_dir = content_path.parent
+    elif content_text is not None:
+        content = content_text
+
+    if content is not None and not content.strip():
+        raise InputValidationError("Article content must not be empty")
+
+    normalized_cover = None
+    if cover_image_path:
+        normalized_cover = str(_validate_local_image(cover_image_path, "Cover image"))
+
+    converted_html = ""
+    images = []
+    if content:
+        if raw:
+            converted_html = "<p>" + html_lib.escape(content).replace("\n", "<br>\n") + "</p>"
+        else:
+            converted = convert_with_images(content, base_dir=content_base_dir)
+            converted_html = converted.html
+            images = converted.images
+            for image in images:
+                image_path = image["path"]
+                if image_path.startswith(("http://", "https://", "data:")):
+                    raise InputValidationError(
+                        f"Inline image must be a local file: {image_path}"
+                    )
+                _validate_local_image(image_path, "Inline image")
+
+    return PreparedArticle(
+        title=normalized_title,
+        content=content,
+        content_base_dir=content_base_dir,
+        cover_image_path=normalized_cover,
+        html=converted_html,
+        images=images,
+    )
 
 
 def _run_command(command, args, input_data=None):
@@ -291,6 +424,31 @@ def should_upload_cover(cover_image_path=None, content_images=None):
     return bool(cover_image_path) and not bool(content_images)
 
 
+def detect_publish_success(page, timeout_seconds=15, poll_interval=0.5):
+    success_selectors = (
+        ".byte-message-success",
+        ".byte-notification-success",
+        "[role='alert']",
+    )
+    deadline = time.time() + timeout_seconds
+    while True:
+        for selector in success_selectors:
+            try:
+                messages = page.locator(selector)
+                for index in range(messages.count()):
+                    message = messages.nth(index)
+                    if not message.is_visible():
+                        continue
+                    text = (message.inner_text() or "").strip()
+                    if "发布成功" in text or "主页查看" in text:
+                        return text
+            except Exception:
+                continue
+        if time.time() >= deadline:
+            return None
+        time.sleep(poll_interval)
+
+
 def make_screenshot_taker(page, enabled=False, debug_dir=None):
     if not enabled:
         return lambda name: None
@@ -311,34 +469,22 @@ def make_screenshot_taker(page, enabled=False, debug_dir=None):
 
 
 def publish(
-    title=None,
-    content_html=None,
-    content_base_dir=None,
-    cover_image_path=None,
-    dry_run=False,
+    article,
+    mode="manual",
     headless=False,
     no_cover=False,
-    raw=False,
-    auto_publish=False,
     debug_screenshots=False,
     debug_dir=None,
+    event_callback=None,
 ):
     """
     Launches a browser to the Toutiao publishing page and automates the posting process.
     """
-    # Optimize title to meet Toutiao constraints (2-30 chars)
-    if title:
-        original_title = title
-        if len(title) > 30:
-            title = title[:30]
-            print(
-                f"⚠️ Title optimized (truncated to 30 chars): '{original_title}' -> '{title}'"
-            )
-        elif len(title) < 2:
-            title = f"{title}..."
-            print(
-                f"⚠️ Title optimized (extended to min 2 chars): '{original_title}' -> '{title}'"
-            )
+    title = article.title
+    content_html = article.content
+    cover_image_path = article.cover_image_path
+    final_html = article.html
+    content_images = article.images
 
     # Check if we have valid auth
     auth_manager = AuthManager()
@@ -349,28 +495,25 @@ def publish(
     #     )
     #     return False
 
-    # Convert Markdown to HTML if content is provided
-    final_html = ""
-    content_images = []
-    if content_html and not raw:
-        print("🔄 Converting Markdown to HTML...")
-        try:
-            converted = convert_with_images(content_html, base_dir=content_base_dir)
-            final_html = converted.html
-            content_images = converted.images
-            print(f"  HTML preview: {final_html[:100]}...")
-            if content_images:
-                print(f"  Found {len(content_images)} inline image(s).")
-        except Exception as e:
-            print(f"⚠️ Conversion failed, using raw text: {e}")
-            final_html = content_html
-    elif content_html:
-        final_html = content_html
+    if final_html:
+        print(f"  HTML preview: {final_html[:100]}...")
+    if content_images:
+        print(f"  Found {len(content_images)} inline image(s).")
 
     print(f"🚀 Launching Toutiao Publisher (Headless: {headless})...")
 
     with sync_playwright() as p:
-        context = BrowserFactory.launch_persistent_context(p, headless=headless)
+        try:
+            context = BrowserFactory.launch_persistent_context(
+                p,
+                headless=headless,
+                user_data_dir=str(auth_manager.browser_profile_dir),
+                lock_path=str(auth_manager.profile_lock_file),
+                state_file=str(auth_manager.state_file),
+            )
+        except ProfileLockedError as e:
+            print(f"❌ {e}")
+            return PublishResult(False, "profile_locked", str(e))
 
         # Get the page (persistent context usually has one page open or we create one)
         page = context.pages[0] if context.pages else context.new_page()
@@ -392,41 +535,40 @@ def publish(
                 print(f"⚠️ Navigation warning (proceeding anyway): {e}")
 
             # Check if we were redirected to login
-            if "auth/page/login" in page.url or "sso.toutiao.com" in page.url:
+            if is_login_url(page.url):
                 print("⚠️ Redirected to login page.")
                 if headless:
                     print(
                         "❌ Cannot login in headless mode. Please run without --headless."
                     )
-                    return False
+                    return PublishResult(
+                        False,
+                        "login_required",
+                        "Stored login is unavailable in headless mode",
+                    )
 
                 print("⏳ Waiting for user login (5 mins)...")
                 print("   Please scan QR code in the browser window.")
 
                 start_time = time.time()
+                last_probe_time = start_time - AUTH_PROBE_INTERVAL_SECONDS
                 logged_in = False
                 while time.time() - start_time < 300:
                     try:
-                        # Check indicators
+                        detected_url = auth_manager.detect_authenticated_url(context)
+                        now = time.time()
                         if (
-                            "profile_v4" in page.url
-                            or "mp.toutiao.com/graphic/publish" in page.url
+                            not detected_url
+                            and now - last_probe_time >= AUTH_PROBE_INTERVAL_SECONDS
                         ):
-                            print("✅ Detected login! Saving state...")
-                            # Save state for future use
-                            try:
-                                state_path = Path("data/browser_state/state.json")
-                                state_path.parent.mkdir(parents=True, exist_ok=True)
-                                context.storage_state(path=str(state_path))
-                                print("   State saved.")
-                            except Exception as e:
-                                print(f"   Warning: Could not save state: {e}")
+                            detected_url = auth_manager.detect_authenticated_url(
+                                context, include_network_probe=True
+                            )
+                            last_probe_time = now
 
-                            logged_in = True
-                            break
-
-                        # Also check if we are back on publish page
-                        if PUBLISH_URL in page.url:
+                        if detected_url:
+                            print(f"✅ Detected login: {detected_url}")
+                            auth_manager.save_auth_state(context)
                             logged_in = True
                             break
                     except:
@@ -435,7 +577,7 @@ def publish(
 
                 if not logged_in:
                     print("❌ Login timeout.")
-                    return False
+                    return PublishResult(False, "login_timeout", "Login timed out")
 
                 # If we logged in but are not on publish page, go there
                 if PUBLISH_URL not in page.url:
@@ -490,9 +632,15 @@ def publish(
 
                     if not title_filled:
                         print("❌ Could not identify title input.")
+                        return PublishResult(
+                            False,
+                            "title_fill_failed",
+                            "Could not identify the title input",
+                        )
 
                 except Exception as e:
                     print(f"⚠️ Failed to fill title: {e}")
+                    return PublishResult(False, "title_fill_failed", str(e))
 
                 take_screenshot("after_title")
 
@@ -553,6 +701,13 @@ def publish(
                             eval_args,
                         )
 
+                        if not filled:
+                            return PublishResult(
+                                False,
+                                "content_fill_failed",
+                                "ProseMirror rejected the article content",
+                            )
+
                         time.sleep(3)
                         print("✅ Content pasted via JS event.")
 
@@ -585,19 +740,37 @@ def publish(
                             print(
                                 "⚠️ Warning: content might not be saved. Publishing might fail."
                             )
+                            if mode == "auto":
+                                return PublishResult(
+                                    False,
+                                    "draft_not_saved",
+                                    "Toutiao did not confirm that the draft was saved",
+                                )
 
                     else:
                         print("⚠️ ProseMirror editor not found.")
+                        return PublishResult(
+                            False,
+                            "content_fill_failed",
+                            "ProseMirror editor was not found",
+                        )
                 except Exception as e:
                     print(f"⚠️ Failed to fill content: {e}")
+                    return PublishResult(False, "content_fill_failed", str(e))
 
                 take_screenshot("after_content")
 
                 if content_images:
                     try:
-                        insert_content_images(page, content_images)
+                        if not insert_content_images(page, content_images):
+                            return PublishResult(
+                                False,
+                                "inline_image_failed",
+                                "One or more inline images were not inserted",
+                            )
                     except Exception as e:
                         print(f"⚠️ Failed to insert inline images: {e}")
+                        return PublishResult(False, "inline_image_failed", str(e))
                     take_screenshot("after_inline_images")
 
             # 3. Cover Image Processing
@@ -672,6 +845,7 @@ def publish(
 
                 except Exception as e:
                     print(f"⚠️ Failed to upload cover: {e}")
+                    return PublishResult(False, "cover_upload_failed", str(e))
 
             elif no_cover:
                 print("🖼️ Selecting 'No Cover' (无封面) mode...")
@@ -691,9 +865,10 @@ def publish(
                     take_screenshot("cover_mode_selected")
                 except Exception as e:
                     print(f"⚠️ Failed to select no cover: {e}")
+                    return PublishResult(False, "cover_mode_failed", str(e))
 
             # 4. Final Publish Step (Optimized Two-Step Flow)
-            if auto_publish and not dry_run:
+            if mode == "auto":
                 print("🚀 Submitting article (Final Step)...")
                 try:
                     take_screenshot("before_publish_click")
@@ -760,22 +935,34 @@ def publish(
                             print(
                                 "  ❌ Critical: Could not find final confirmation button!"
                             )
-                            return False
+                            return PublishResult(
+                                False,
+                                "publish_failed",
+                                "Could not find the final confirmation button",
+                            )
 
                     # Success Check
                     print("  Checking for success indicators...")
-                    time.sleep(5)
+                    success_indicator = detect_publish_success(
+                        page,
+                        timeout_seconds=20,
+                    )
                     take_screenshot("final_result")
+                    if success_indicator:
+                        print(
+                            f"✨ Publish Successful! Found text: {success_indicator}"
+                        )
+                        return PublishResult(
+                            True,
+                            "published",
+                            "Confirmed by Toutiao success indicator: "
+                            f"{success_indicator}",
+                        )
 
-                    # Common success texts
-                    success_texts = ["发布成功", "主页查看", "已发布"]
-                    for text in success_texts:
-                        if page.get_by_text(text).is_visible():
-                            print(f"✨ Publish Successful! Found text: {text}")
-                            return True
-
-                    return (
-                        True  # Assume success if we clicked final button without error
+                    return PublishResult(
+                        False,
+                        "publish_unconfirmed",
+                        "Final button was clicked but no success indicator was found",
                     )
 
                 except Exception as e:
@@ -783,7 +970,7 @@ def publish(
                     import traceback
 
                     traceback.print_exc()
-                    return False
+                    return PublishResult(False, "publish_failed", str(e))
             else:
                 print("🛑 Manual review mode: skipping final publish click.")
                 print("   Please review the article in Chrome and click Publish manually.")
@@ -791,6 +978,14 @@ def publish(
                     print("   Headless mode cannot stay open for manual publishing.")
                 else:
                     print("   Press Ctrl+C in this terminal after you are done.")
+                    if event_callback:
+                        event_callback(
+                            PublishResult(
+                                True,
+                                "awaiting_manual_review",
+                                "Draft is ready for user review in Chrome",
+                            )
+                        )
                     try:
                         while True:
                             time.sleep(5)
@@ -798,16 +993,20 @@ def publish(
                         print("\n✅ Manual review finished.")
 
             print("✨ Operation completed.")
-            return True
+            return PublishResult(
+                True,
+                "manual_review_finished",
+                "User ended the manual review session",
+            )
 
         except Exception as e:
             print(f"❌ Error during publishing: {e}")
             import traceback
 
             traceback.print_exc()
-            return False
+            return PublishResult(False, "publish_failed", str(e))
         finally:
-            if not headless and auto_publish:
+            if not headless and mode == "auto":
                 print("browser open for inspection. Closing in 60s...")
                 time.sleep(60)
             if context:
@@ -817,15 +1016,37 @@ def publish(
                     print(f"⚠️ Browser context close warning: {e}")
 
 
-def main():
-    parser = argparse.ArgumentParser(description="Toutiao Article Publisher")
+def _result_payload(result, mode):
+    return {
+        "ok": result.ok,
+        "status": result.status,
+        "message": result.message,
+        "mode": mode,
+    }
+
+
+def main(argv=None):
+    cli_argv = list(argv if argv is not None else sys.argv[1:])
+    parser_class = configure_json_argument_parser(cli_argv)
+    parser = parser_class(description="Toutiao Article Publisher")
     parser.add_argument("--title", help="Article title")
-    parser.add_argument("--content", help="Article content (string or file path)")
+    content_group = parser.add_mutually_exclusive_group()
+    content_group.add_argument(
+        "--content",
+        "--content-file",
+        dest="content_file",
+        help="Path to a UTF-8 Markdown file",
+    )
+    content_group.add_argument(
+        "--content-text",
+        help="Article body provided directly on the command line",
+    )
     parser.add_argument("--cover", help="Path to cover image")
     parser.add_argument(
-        "--dry-run", action="store_true", help="Fill fields but do not publish"
+        "--mode",
+        choices=PUBLISH_MODES,
+        help="manual: fill and wait; auto: publish; validate: preflight only",
     )
-    # Add headless and no-cover arguments
     parser.add_argument(
         "--headless", action="store_true", help="Run in headless mode (no UI)"
     )
@@ -840,7 +1061,12 @@ def main():
     parser.add_argument(
         "--auto-publish",
         action="store_true",
-        help="Click the final publish buttons automatically after filling the article",
+        help=argparse.SUPPRESS,
+    )
+    parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--debug-screenshots",
@@ -851,31 +1077,87 @@ def main():
         "--debug-dir",
         help="Directory for debug screenshots when --debug-screenshots is enabled",
     )
-
-    args = parser.parse_args()
-
-    content = args.content
-    content_base_dir = Path.cwd()
-    if content and os.path.exists(content):
-        content_path = Path(content).resolve()
-        content_base_dir = content_path.parent
-        with open(content_path, "r", encoding="utf-8") as f:
-            content = f.read()
-
-    publish(
-        title=args.title,
-        content_html=content,
-        content_base_dir=content_base_dir,
-        cover_image_path=args.cover,
-        dry_run=args.dry_run,
-        headless=args.headless,
-        no_cover=args.no_cover,
-        raw=args.raw,
-        auto_publish=args.auto_publish,
-        debug_screenshots=args.debug_screenshots,
-        debug_dir=args.debug_dir,
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Write newline-delimited JSON events to stdout",
     )
+
+    args = parser.parse_args(cli_argv)
+    if args.auto_publish and args.dry_run:
+        parser.error("--auto-publish and --dry-run cannot be combined")
+    if args.auto_publish and args.mode not in {None, "auto"}:
+        parser.error("--auto-publish conflicts with the selected --mode")
+    if args.dry_run and args.mode not in {None, "validate"}:
+        parser.error("--dry-run conflicts with the selected --mode")
+
+    mode = args.mode or (
+        "auto" if args.auto_publish else "validate" if args.dry_run else "manual"
+    )
+    json_stream = sys.stdout
+    output_context = (
+        contextlib.redirect_stdout(sys.stderr)
+        if args.json
+        else contextlib.nullcontext()
+    )
+
+    def emit_result(result):
+        if args.json:
+            print(
+                json.dumps(_result_payload(result, mode), ensure_ascii=False),
+                file=json_stream,
+                flush=True,
+            )
+
+    with output_context:
+        try:
+            article = prepare_article(
+                title=args.title,
+                content_file=args.content_file,
+                content_text=args.content_text,
+                cover_image_path=args.cover,
+                mode=mode,
+                headless=args.headless,
+                no_cover=args.no_cover,
+                raw=args.raw,
+            )
+        except (InputValidationError, UnicodeError, OSError) as e:
+            result = PublishResult(False, "invalid_input", str(e))
+            print(f"❌ Input validation failed: {e}")
+            emit_result(result)
+            return EXIT_INVALID_INPUT
+
+        if mode == "validate":
+            result = PublishResult(
+                True,
+                "input_valid",
+                f"Preflight passed with {len(article.images)} inline image(s)",
+            )
+            print("✅ Input preflight passed. Browser was not opened.")
+            emit_result(result)
+            return EXIT_OK
+
+        try:
+            result = publish(
+                article=article,
+                mode=mode,
+                headless=args.headless,
+                no_cover=args.no_cover,
+                debug_screenshots=args.debug_screenshots,
+                debug_dir=args.debug_dir,
+                event_callback=emit_result,
+            )
+        except Exception as e:
+            result = PublishResult(False, "publish_failed", str(e))
+            print(f"❌ Publisher failed: {e}")
+
+        emit_result(result)
+        if result.ok:
+            return EXIT_OK
+        if result.status == "profile_locked":
+            return EXIT_PROFILE_LOCKED
+        return EXIT_FAILURE
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

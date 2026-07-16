@@ -3,15 +3,35 @@ Configuration for Toutiao Publisher Skill
 Centralizes constants, selectors, and paths
 """
 
+import os
 from pathlib import Path
 
+
+DATA_DIR_ENV_VAR = "SUPER_PUBLISHER_DATA_DIR"
+
+
+def resolve_data_dir(value=None, home=None):
+    """Resolve one agent-neutral data directory for all local installations."""
+    home_dir = Path(home) if home is not None else Path.home()
+    configured = value if value is not None else os.getenv(DATA_DIR_ENV_VAR)
+
+    if configured:
+        data_dir = Path(configured).expanduser()
+        if not data_dir.is_absolute():
+            data_dir = home_dir / data_dir
+    else:
+        data_dir = home_dir / ".super-publisher" / "toutiao-publisher"
+
+    return data_dir
+
+
 # Paths
-SKILL_DIR = Path(__file__).parent.parent
-DATA_DIR = SKILL_DIR / "data"
+DATA_DIR = resolve_data_dir()
 BROWSER_STATE_DIR = DATA_DIR / "browser_state"
 BROWSER_PROFILE_DIR = BROWSER_STATE_DIR / "browser_profile"
 STATE_FILE = BROWSER_STATE_DIR / "state.json"
 AUTH_INFO_FILE = DATA_DIR / "auth_info.json"
+PROFILE_LOCK_FILE = DATA_DIR / "profile.lock"
 
 # URLs
 LOGIN_URL = "https://mp.toutiao.com/auth/page/login"
@@ -26,8 +46,6 @@ BROWSER_ARGS = [
     "--no-first-run",
     "--no-default-browser-check",
 ]
-
-USER_AGENT = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
 # Timeouts
 LOGIN_TIMEOUT_MINUTES = 10

@@ -5,10 +5,17 @@ Manages virtual environment and dependencies automatically
 """
 
 import os
+import shutil
 import sys
 import subprocess
 import venv
+import hashlib
 from pathlib import Path
+
+
+def requirements_digest(requirements_file):
+    path = Path(requirements_file)
+    return hashlib.sha256(path.read_bytes()).hexdigest() if path.exists() else ""
 
 
 class SkillEnvironment:
@@ -19,6 +26,7 @@ class SkillEnvironment:
         self.skill_dir = Path(__file__).parent.parent
         self.venv_dir = self.skill_dir / ".venv"
         self.requirements_file = self.skill_dir / "requirements.txt"
+        self.requirements_marker = self.venv_dir / ".requirements.sha256"
 
         # Python executable in venv
         if os.name == "nt":  # Windows
@@ -35,6 +43,12 @@ class SkillEnvironment:
         if self.is_in_skill_venv():
             print("✅ Already running in skill virtual environment")
             return True
+
+        if self.venv_dir.exists() and (
+            not self.venv_python.is_file() or not self.venv_pip.is_file()
+        ):
+            print(f"♻️ Rebuilding incomplete virtual environment: {self.venv_dir}")
+            shutil.rmtree(self.venv_dir)
 
         # Create venv if it doesn't exist
         if not self.venv_dir.exists():
@@ -66,6 +80,10 @@ class SkillEnvironment:
                     text=True,
                 )
                 print("✅ Dependencies installed")
+                self.requirements_marker.write_text(
+                    requirements_digest(self.requirements_file),
+                    encoding="utf-8",
+                )
 
                 # Install Chrome for Patchright (not Chromium!)
                 print("🌐 Installing Google Chrome for Patchright...")
@@ -86,7 +104,7 @@ class SkillEnvironment:
                 except subprocess.CalledProcessError as e:
                     print(f"⚠️ Warning: Failed to install Chrome: {e}")
                     print(
-                        "   You may need to run manually: python -m patchright install chrome"
+                        "   You may need to run manually: .venv/bin/python -m patchright install chrome"
                     )
 
                 return True
@@ -181,7 +199,7 @@ def main():
             print(f"   To activate manually: {env.activate_instructions()}")
         else:
             print(f"❌ No virtual environment found")
-            print(f"   Run setup_environment.py to create it")
+            print("   Run: python3 scripts/setup_environment.py")
         return
 
     if args.run:
@@ -195,7 +213,7 @@ def main():
         print(f"   Python: {env.get_python_executable()}")
         print(f"\nTo activate manually: {env.activate_instructions()}")
         print(
-            f"Or run scripts directly: python setup_environment.py --run script_name.py"
+            "Or run scripts directly: python3 scripts/setup_environment.py --run script_name.py"
         )
     else:
         print("\n❌ Environment setup failed")

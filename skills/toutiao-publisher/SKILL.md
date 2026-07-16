@@ -1,95 +1,121 @@
 ---
 name: toutiao-publisher
-description: Publish articles to Toutiao (Today's Headlines). Handles persistent authentication (login once) and session management. Opens browser for interactive publishing.
-compatibility: Requires Python 3.9+, Patchright (Playwright fork), and Google Chrome. Runs in headless mode or launches Chrome for QR code authentication.
+description: Publish or prepare articles for Toutiao/头条号, check or restore shared login state, fill Markdown drafts with inline images and covers, and optionally complete final publishing. Use for requests such as 发布到头条、检查头条登录、填充头条草稿、上传图文、人工审核 or explicitly authorized automatic publishing.
 ---
 
-# Toutiao Publisher Skill
+# Toutiao Publisher
 
-Manage Toutiao (Today's Headlines) account, maintain persistent login session, and publish articles.
+Use the scripts from this Skill directory. Resolve the directory containing this
+`SKILL.md` first and set its absolute path as `SKILL_DIR`; do not assume the caller's
+working directory is the Skill directory.
 
-## When to Use This Skill
+## Safety rules
 
-Trigger when user:
-- Asks to publish to Toutiao/Today's Headlines
-- Wants to manage Toutiao login
-- Mentions "toutiao" or "头条号"
+- Default to `--mode manual`. Leave Chrome open for the user to review and click Publish.
+- Use `--mode auto` only when the user explicitly authorizes final publishing.
+- Run `clear --yes` or `reauth --yes` only after the user confirms that all local
+  Agents may lose the shared Toutiao session.
+- Do not bypass input validation or treat an unconfirmed publish click as success.
 
-## Core Workflow
+## Preflight authentication
 
-### Step 1: Authentication (One-Time Setup)
-
-The skill requires a one-time login. The session is persisted for subsequent uses.
-
-```bash
-# Browser will open for manual login (scan QR code)
-python scripts/run.py auth_manager.py setup
-```
-
-**Instructions:**
-1.  Run the setup command.
-2.  A browser window will open loading the Toutiao login page.
-3.  Log in manually (e.g., scan QR code).
-4.  Once logged in (redirected to dashboard), the script will save the session and close.
-
-### Step 2: Publish Article
+Check the protected Toutiao page before asking the user to scan a QR code:
 
 ```bash
-# Opens browser with authenticated session at publish page
-python scripts/run.py publisher.py
+python3 "$SKILL_DIR/scripts/run.py" auth_manager.py status --verify --json
 ```
 
-**Instructions:**
-1.  Run the publisher command.
-2.  Browser opens directly to the "Publish Article" page.
-3.  Write and publish the article manually.
-4.  Press `Ctrl+C` in the terminal when done.
-
-> **Note:** Toutiao requires titles to be **2-30 characters**. This tool automatically optimizes titles to fit this constraint (truncating if >30, padding if <2).
-
-#### Advanced Usage (Draft Automation)
-
-You can fill a draft automatically by providing arguments. By default, the tool stops before final publishing so the user can inspect the article and click Publish manually.
+If the result status is `not_authenticated`, open the interactive login flow:
 
 ```bash
-# Fill title, Markdown content, inline images, and cover image
-python scripts/run.py publisher.py --title "AI Trends 2025" --content "article.md" --cover "assets/cover.jpg"
+python3 "$SKILL_DIR/scripts/run.py" auth_manager.py setup --json
 ```
 
-Markdown images such as `![caption](assets/chart.png)` are inserted into the article body at their original positions. Local relative image paths are resolved from the Markdown file directory.
+The shared profile lives under `~/.super-publisher/toutiao-publisher/` by default.
+Codex, Kiro, Antigravity, and direct CLI runs by the same system user reuse it.
+Set `SUPER_PUBLISHER_DATA_DIR` to override the location; relative values resolve
+from the user home directory.
 
-If the article body contains images, the tool skips explicit cover handling and does not open Toutiao's cover picker. `--cover` is only uploaded when the Markdown body has no inline images.
+## Prepare and publish an article
 
-Debug screenshots are disabled by default. If troubleshooting is needed, add `--debug-screenshots`; screenshots will be saved under `output/toutiao-publisher-debug/` instead of the working directory.
-
-#### Automated Final Publish
-
-Only use this when the user explicitly asks to publish without manual review:
+Validate inputs without opening Chrome:
 
 ```bash
-python scripts/run.py publisher.py --title "AI Trends 2025" --content "article.md" --cover "assets/cover.jpg" --auto-publish
+python3 "$SKILL_DIR/scripts/run.py" publisher.py \
+  --mode validate \
+  --title "AI Trends 2026" \
+  --content-file "/absolute/path/article.md" \
+  --cover "/absolute/path/cover.jpg" \
+  --json
 ```
 
-Without `--auto-publish`, never click Toutiao's final publish buttons automatically.
-
-### Management
+After validation succeeds, fill the draft and wait for manual review:
 
 ```bash
-# Check authentication status
-python scripts/run.py auth_manager.py status
-
-# Clear authentication data (logout)
-python scripts/run.py auth_manager.py clear
+python3 "$SKILL_DIR/scripts/run.py" publisher.py \
+  --mode manual \
+  --title "AI Trends 2026" \
+  --content-file "/absolute/path/article.md" \
+  --cover "/absolute/path/cover.jpg" \
+  --json
 ```
 
-## Technical Details
+Use direct text only through `--content-text`. `--content` remains an alias for
+`--content-file`; a missing path is an error rather than literal article text.
 
-- **Persistent Auth**: Uses `patchright` to launch a persistent browser context. Cookies and storage state are saved to `data/browser_state/state.json`.
-- **Anti-Detection**: Uses `patchright`'s stealth features to avoid bot detection.
-- **Environment**: Automatically manages a virtual environment (`.venv`) with required dependencies.
+Markdown supports headings, links, ordered and unordered lists, block quotes,
+tables, fenced code, inline code, emphasis, and local inline images. Resolve relative
+image paths from the Markdown file. If the body contains images, skip explicit cover
+upload. Use `--no-cover` only when the body has no image and no cover is supplied.
 
-## Script Reference
+For explicitly authorized automatic publishing:
 
-- `scripts/auth_manager.py`: Handles login, session validation, and state persistence.
-- `scripts/publisher.py`: Launches authenticated browser for publishing.
-- `scripts/run.py`: Wrapper ensuring execution in the correct virtual environment.
+```bash
+python3 "$SKILL_DIR/scripts/run.py" publisher.py \
+  --mode auto \
+  --title "AI Trends 2026" \
+  --content-file "/absolute/path/article.md" \
+  --headless \
+  --json
+```
+
+Automatic publishing succeeds only after Toutiao displays a recognized success
+indicator. A final-button click without confirmation returns `publish_unconfirmed`.
+
+## Result contract
+
+With `--json`, authentication commands write one JSON result to stdout. Publisher
+commands write newline-delimited JSON events; manual mode emits
+`awaiting_manual_review` before waiting for the user.
+
+- Exit `0`: authenticated, input valid, manual review completed, or publish confirmed.
+- Exit `1`: runtime, browser interaction, draft, upload, or publish failure.
+- Exit `2`: invalid input, missing authentication, or clear confirmation required.
+- Exit `3`: the shared Chrome Profile is in use by another Agent.
+
+Treat stderr as human-readable diagnostics. Do not parse emojis or prose to determine
+success.
+
+## Session management
+
+```bash
+# Read local state only
+python3 "$SKILL_DIR/scripts/run.py" auth_manager.py status --json
+
+# Verify against Toutiao and refresh state
+python3 "$SKILL_DIR/scripts/run.py" auth_manager.py validate --json
+
+# Destructive: require explicit user confirmation first
+python3 "$SKILL_DIR/scripts/run.py" auth_manager.py clear --yes --json
+```
+
+## Environment
+
+Require Python 3.9+, Google Chrome, and local network access. `scripts/run.py`
+bootstraps `scripts/setup_environment.py`, verifies the requirements fingerprint,
+and executes the target with the Skill-local `.venv` Python. The shared state directory
+uses owner-only permissions, and a lock prevents concurrent Agents from opening the
+same persistent Chrome Profile.
+
+Enable `--debug-screenshots` only when troubleshooting. Screenshots are written under
+`output/toutiao-publisher-debug/` by default.
