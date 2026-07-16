@@ -31,8 +31,15 @@ else
     fi
 
     # Ask for version confirmation
-    read -p "Confirm release version [default: $LATEST_VERSION]: " user_version
-    VERSION=${user_version:-$LATEST_VERSION}
+    read -p "Confirm release version [default: $LATEST_VERSION] (y/n/custom): " user_version
+    if [[ -z "$user_version" || "$user_version" =~ ^[Yy](es)?$ ]]; then
+        VERSION="$LATEST_VERSION"
+    elif [[ "$user_version" =~ ^[Nn](o)?$ ]]; then
+        read -p "Enter custom version (e.g., 1.4.2): " manual_version
+        VERSION="$manual_version"
+    else
+        VERSION="$user_version"
+    fi
 fi
 
 # Standardize tag name with 'v' prefix
