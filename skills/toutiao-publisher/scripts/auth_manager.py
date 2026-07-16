@@ -25,12 +25,6 @@ from config import (
 )
 from browser_utils import BrowserFactory
 from cli_utils import configure_json_argument_parser
-from profile_lock import (
-    ProfileLock,
-    ProfileLockedError,
-    ensure_private_directory,
-    ensure_private_file,
-)
 
 
 AUTH_COOKIE_DOMAINS = ("toutiao.com", "bytedance.com", "snssdk.com")
@@ -38,7 +32,20 @@ AUTH_PROBE_INTERVAL_SECONDS = 3
 EXIT_OK = 0
 EXIT_FAILURE = 1
 EXIT_INVALID_STATE = 2
-EXIT_PROFILE_LOCKED = 3
+
+
+def ensure_private_directory(path):
+    path = Path(path)
+    path.mkdir(parents=True, exist_ok=True, mode=0o700)
+    path.chmod(0o700)
+    return path
+
+
+def ensure_private_file(path):
+    path = Path(path)
+    if path.exists():
+        path.chmod(0o600)
+    return path
 
 
 def is_login_url(url: str) -> bool:
@@ -70,7 +77,6 @@ class AuthManager:
         self.browser_profile_dir = self.browser_state_dir / "browser_profile"
         self.state_file = self.browser_state_dir / "state.json"
         self.auth_info_file = self.data_dir / "auth_info.json"
-        self.profile_lock_file = self.data_dir / "profile.lock"
         self.last_status = "unknown"
 
         # Ensure directories exist
@@ -138,7 +144,6 @@ class AuthManager:
         self,
         headless: bool = False,
         timeout_minutes: int = 10,
-        profile_lock=None,
     ) -> bool:
         """
         Perform interactive authentication setup
@@ -164,9 +169,7 @@ class AuthManager:
                 playwright,
                 headless=headless,
                 user_data_dir=str(self.browser_profile_dir),
-                lock_path=str(self.profile_lock_file),
                 state_file=str(self.state_file),
-                profile_lock=profile_lock,
             )
 
             # Probe a protected page first. Visiting the login page is not a
@@ -227,10 +230,6 @@ class AuthManager:
                 self.last_status = "authentication_failed"
                 return False
 
-        except ProfileLockedError as e:
-            print(f"  ❌ {e}")
-            self.last_status = "profile_locked"
-            return False
         except Exception as e:
             print(f"  ❌ Error: {e}")
             self.last_status = "authentication_failed"
@@ -326,24 +325,14 @@ class AuthManager:
             return False
 
         print("🗑️ Clearing authentication data...")
-        profile_lock = ProfileLock(self.profile_lock_file)
-
         try:
-            profile_lock.acquire()
             self._clear_auth_files()
             self.last_status = "cleared"
             return True
-
-        except ProfileLockedError as e:
-            print(f"  ❌ {e}")
-            self.last_status = "profile_locked"
-            return False
         except Exception as e:
             print(f"  ❌ Error clearing auth: {e}")
             self.last_status = "clear_failed"
             return False
-        finally:
-            profile_lock.release()
 
     def _clear_auth_files(self):
         if self.state_file.exists():
@@ -383,22 +372,14 @@ class AuthManager:
             self.last_status = "confirmation_required"
             return False
 
-        profile_lock = ProfileLock(self.profile_lock_file)
         try:
-            profile_lock.acquire()
             print("🗑️ Clearing authentication data...")
             self._clear_auth_files()
-            return self.setup_auth(
-                headless,
-                timeout_minutes,
-                profile_lock=profile_lock,
-            )
-        except ProfileLockedError as e:
-            print(f"  ❌ {e}")
-            self.last_status = "profile_locked"
+            return self.setup_auth(headless, timeout_minutes)
+        except Exception as e:
+            print(f"  ❌ Re-authentication failed: {e}")
+            self.last_status = "authentication_failed"
             return False
-        finally:
-            profile_lock.release()
 
     def validate_auth(self) -> bool:
         """
@@ -417,7 +398,6 @@ class AuthManager:
                 playwright,
                 headless=True,
                 user_data_dir=str(self.browser_profile_dir),
-                lock_path=str(self.profile_lock_file),
                 state_file=str(self.state_file),
             )
 
@@ -437,10 +417,6 @@ class AuthManager:
             self.last_status = "authenticated"
             return True
 
-        except ProfileLockedError as e:
-            print(f"  ❌ {e}")
-            self.last_status = "profile_locked"
-            return False
         except Exception as e:
             print(f"  ❌ Validation failed: {e}")
             self.last_status = "validation_failed"
@@ -468,8 +444,6 @@ def _add_json_argument(parser):
 
 
 def _exit_code_for_status(status):
-    if status == "profile_locked":
-        return EXIT_PROFILE_LOCKED
     if status in {"not_authenticated", "confirmation_required"}:
         return EXIT_INVALID_STATE
     return EXIT_FAILURE

@@ -108,11 +108,6 @@ class AuthManagerTest(unittest.TestCase):
                 launch_context.call_args.kwargs["state_file"],
                 str(manager.state_file),
             )
-            self.assertEqual(
-                launch_context.call_args.kwargs["lock_path"],
-                str(manager.profile_lock_file),
-            )
-
     def test_empty_state_file_is_not_reported_as_authenticated(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             manager = self.make_manager(temp_dir)
@@ -237,26 +232,19 @@ class AuthManagerTest(unittest.TestCase):
         self.assertEqual(raised.exception.code, auth_manager.EXIT_INVALID_STATE)
         self.assertEqual(payload["status"], "invalid_arguments")
 
-    def test_reauth_holds_one_lock_across_clear_and_setup(self):
+    def test_reauth_clears_before_setup(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             manager = self.make_manager(temp_dir)
-            profile_lock = Mock(acquired=True)
 
             with (
-                patch("auth_manager.ProfileLock", return_value=profile_lock),
                 patch.object(manager, "_clear_auth_files") as clear_files,
                 patch.object(manager, "setup_auth", return_value=True) as setup_auth,
             ):
                 result = manager.re_auth(confirmed=True)
 
             self.assertTrue(result)
-            profile_lock.acquire.assert_called_once_with()
             clear_files.assert_called_once_with()
-            self.assertIs(
-                setup_auth.call_args.kwargs["profile_lock"],
-                profile_lock,
-            )
-            profile_lock.release.assert_called_once_with()
+            setup_auth.assert_called_once_with(False, 10)
 
 
 if __name__ == "__main__":

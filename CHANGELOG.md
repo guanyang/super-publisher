@@ -13,7 +13,7 @@
   - **跨 Agent 会话共享**：默认登录数据统一存放在 `~/.super-publisher/toutiao-publisher/`，支持 Codex、Kiro、Antigravity 与 CLI 共用；可通过 `SUPER_PUBLISHER_DATA_DIR` 覆盖路径。
   - **Python 启动链修正**：文档入口统一使用 `python3`；`run.py` 会调用 `setup_environment.py` 准备 Skill 的 `.venv`，并在解释器缺失或环境不完整时自动重建。
   - **Agent 结果契约**：认证与发布命令支持 JSON/NDJSON 输出和稳定退出码；自动发布仅在检测到头条成功标志时返回成功。
-  - **共享 Profile 防护**：登录目录和状态文件改为 owner-only 权限，清理共享登录态必须显式确认，并通过跨进程锁阻止多个 Agent 并发打开同一 Chrome Profile。
+  - **共享 Profile 安全**：登录目录和状态文件使用 owner-only 权限，清理共享登录态必须显式确认；移除应用层 `ProfileLock`，避免 Agent 被锁状态阻塞。
   - **发布输入预检**：新增 `manual`、`auto`、`validate` 三种模式，在打开浏览器前校验标题、正文文件、正文图片和封面。
   - **Markdown 保真度提升**：接入 Python-Markdown，支持链接、有序列表、引用、表格、代码和常用博客排版，同时保留正文图片原位置插入。
 

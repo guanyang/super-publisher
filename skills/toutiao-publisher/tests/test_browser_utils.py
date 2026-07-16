@@ -9,7 +9,6 @@ SCRIPT_DIR = Path(__file__).resolve().parents[1] / "scripts"
 sys.path.insert(0, str(SCRIPT_DIR))
 
 from browser_utils import BrowserFactory
-from profile_lock import ProfileLockedError
 
 
 class FakeChromium:
@@ -40,28 +39,10 @@ class BrowserFactoryTest(unittest.TestCase):
                 context = BrowserFactory.launch_persistent_context(
                     playwright,
                     user_data_dir=str(Path(temp_dir) / "browser_profile"),
-                    lock_path=str(Path(temp_dir) / "profile.lock"),
                 )
 
         self.assertNotIn("user_agent", playwright.chromium.launch_kwargs)
         context.close()
-
-    def test_shared_profile_lock_is_held_until_context_closes(self):
-        playwright = FakePlaywright()
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            kwargs = {
-                "user_data_dir": str(Path(temp_dir) / "browser_profile"),
-                "lock_path": str(Path(temp_dir) / "profile.lock"),
-            }
-            with patch.object(BrowserFactory, "_inject_cookies"):
-                first = BrowserFactory.launch_persistent_context(playwright, **kwargs)
-                with self.assertRaises(ProfileLockedError):
-                    BrowserFactory.launch_persistent_context(playwright, **kwargs)
-
-                first.close()
-                second = BrowserFactory.launch_persistent_context(playwright, **kwargs)
-                second.close()
 
 
 if __name__ == "__main__":

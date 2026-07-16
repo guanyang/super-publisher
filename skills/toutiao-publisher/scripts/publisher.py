@@ -31,14 +31,12 @@ from auth_manager import (
 )
 from browser_utils import BrowserFactory
 from cli_utils import configure_json_argument_parser
-from profile_lock import ProfileLockedError
 from md2html import convert_with_images
 
 
 EXIT_OK = 0
 EXIT_FAILURE = 1
 EXIT_INVALID_INPUT = 2
-EXIT_PROFILE_LOCKED = 3
 PUBLISH_MODES = ("manual", "auto", "validate")
 LOCAL_IMAGE_SUFFIXES = {".png", ".jpg", ".jpeg", ".gif", ".webp"}
 
@@ -503,17 +501,12 @@ def publish(
     print(f"🚀 Launching Toutiao Publisher (Headless: {headless})...")
 
     with sync_playwright() as p:
-        try:
-            context = BrowserFactory.launch_persistent_context(
-                p,
-                headless=headless,
-                user_data_dir=str(auth_manager.browser_profile_dir),
-                lock_path=str(auth_manager.profile_lock_file),
-                state_file=str(auth_manager.state_file),
-            )
-        except ProfileLockedError as e:
-            print(f"❌ {e}")
-            return PublishResult(False, "profile_locked", str(e))
+        context = BrowserFactory.launch_persistent_context(
+            p,
+            headless=headless,
+            user_data_dir=str(auth_manager.browser_profile_dir),
+            state_file=str(auth_manager.state_file),
+        )
 
         # Get the page (persistent context usually has one page open or we create one)
         page = context.pages[0] if context.pages else context.new_page()
@@ -1154,8 +1147,6 @@ def main(argv=None):
         emit_result(result)
         if result.ok:
             return EXIT_OK
-        if result.status == "profile_locked":
-            return EXIT_PROFILE_LOCKED
         return EXIT_FAILURE
 
 

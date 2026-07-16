@@ -91,7 +91,6 @@ commands write newline-delimited JSON events; manual mode emits
 - Exit `0`: authenticated, input valid, manual review completed, or publish confirmed.
 - Exit `1`: runtime, browser interaction, draft, upload, or publish failure.
 - Exit `2`: invalid input, missing authentication, or clear confirmation required.
-- Exit `3`: the shared Chrome Profile is in use by another Agent.
 
 Treat stderr as human-readable diagnostics. Do not parse emojis or prose to determine
 success.
@@ -114,7 +113,7 @@ python3 "$SKILL_DIR/scripts/run.py" auth_manager.py clear --yes --json
 Require Python 3.9+, Google Chrome, and local network access. `scripts/run.py`
 bootstraps `scripts/setup_environment.py`, verifies the requirements fingerprint,
 and executes the target with the Skill-local `.venv` Python. The shared state directory
-uses owner-only permissions, and a lock prevents concurrent Agents from opening the
+uses owner-only permissions. Avoid starting concurrent browser operations against the
 same persistent Chrome Profile.
 
 Enable `--debug-screenshots` only when troubleshooting. Screenshots are written under
