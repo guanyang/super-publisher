@@ -42,7 +42,7 @@ Super Publisher 是一个专为 Agent 设计的插件，旨在实现自动化的
 ### GIF Maker (`skills/gif-maker`)
 > 详细文档请参考 [skills/gif-maker/README.md](skills/gif-maker/README.md)。
 - **动图生成**：支持从序列帧或网格图（Sprite Sheet）生成 GIF 动画。
-- **智能压缩**：专为表情包设计，支持 `--max-size` 参数，自动将 GIF 压制在微信限制（1MB/500KB）以内。
+- **智能压缩**：专为表情包设计，支持 `--max-size` 参数（单位 KB），自动将 GIF 压制在微信限制（1MB/500KB）以内。
 - **参数灵活**：支持自定义 FPS、布局切分及循环模式。
 
 ### Video Tutorial Maker (`skills/video-tutorial-maker`)
