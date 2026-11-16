@@ -82,3 +82,7 @@ skills/gif-maker/
 # 高级用法 (布局切分 + FPS + 压缩)
 ./skills/gif-maker/scripts/run.sh /path/to/sheet.png --layout 4x4 --fps 24 --max-size 1024
 ```
+
+## 静态与动态范围
+
+只处理同一动作的真实连续帧，不将16个独立表情混成一张动画。输出已存在时使用新路径；压缩保持原像素尺寸，无法达到体积目标时返回失败，不静默保留超限文件并报告成功。

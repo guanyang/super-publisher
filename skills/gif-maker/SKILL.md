@@ -1,12 +1,11 @@
 ---
 name: gif-maker
 description: 将序列帧图片或精灵表（Sprite Sheet）转换为高质量 GIF 动画。支持自定义 FPS、布局切分及循环播放。
-compatibility: Requires Python 3.9+, Pillow library, and system-level gifsicle utility for advanced compression.
 ---
 
 # GIF 动画生成器 (GIF Maker)
 
-本 Skill 旨在帮助用户快速将一组序列帧图片或单张精灵表（Sprite Sheet）转换为 GIF 动画。
+本 Skill 将同一动作的真实连续帧或动作精灵表转换为 GIF。16个不同含义的独立表情不能当作同一动画的16帧；静态PNG整包不调用本技能。需要Python、Pillow，压缩需要gifsicle。
 
 ## 核心功能
 
@@ -16,7 +15,7 @@ compatibility: Requires Python 3.9+, Pillow library, and system-level gifsicle u
 *   **参数控制**：
     *   `--fps`：指定每秒帧数（默认为 12）。
     *   `--layout`：指定精灵表布局（如 `4x4`），仅在这个模式下需要。
-    *   `--loop`：默认永久循环。
+    *   永久循环固定为loop=0，不提供--loop参数。
     *   `--max-size`: 指定最大体积 (KB)。
 
 ## 使用指南
@@ -74,3 +73,7 @@ python3 skills/gif-maker/scripts/make_gif.py ...
 ```bash
 ./skills/gif-maker/scripts/run.sh sheet.png --layout 4x4 -o action.gif --max-size 950
 ```
+
+## 结果检查
+
+输出已存在时使用新版本路径，禁止覆盖。fps及行列数需为正数，帧尺寸必须一致。压缩不得通过缩小尺寸达标；超过体积目标或缺少压缩工具时明确失败，不报告已符合限制。导出后核对像素尺寸、帧数、循环和文件大小，仍需视觉检查动作连贯性。

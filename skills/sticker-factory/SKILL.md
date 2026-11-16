@@ -1,67 +1,17 @@
 ---
 name: sticker-factory
-description: "Automated factory workflow: Generates grid-based sticker sheets and auto-packages them for WeChat using wechat-sticker-maker. Use when the user wants to create a complete custom sticker pack from scratch (e.g., '帮我做一套表情包', '批量生产表情')."
-compatibility: Requires AI image generation tools (such as generate_image) and local execution environment for WeChat sticker maker scripts.
+description: 编排表情包选题、角色参考、16宫格预览和完整素材交付。用户要求先看预览时停在预览；确认后复用已选图片，通过制作脚本导出整包。
 ---
 
-# Sticker Factory (Auto-Generator & Packer)
+# 表情包生产流程
 
-This skill serves as an **Automated Production Line** that orchestrates the entire lifecycle of sticker creation: from AI generation to WeChat-compliant asset packaging.
+负责创意与阶段选择，确定性加工交给现有脚本，不在每次会话重写切片、元数据和ZIP代码。
 
-## Execution Workflow
+1. 确认角色参考与本次主题，将固定特征、画风、专辑信息及16个动作文案记录到一份pack.json。版权署名只能使用用户提供的内容，不猜测权利人。配置见[制作技能](../wechat-sticker-maker/references/pack-spec.md)。
+2. 用[网格生成技能](../grid-sticker-generator/SKILL.md)生成网格，继承已确认风格；默认真实透明PNG，避免固定成扁平无字。续集核对上一套动作，确保姿态和使用意图不同。
+3. 区分交付范围：用户只要“先出16宫格”时，仅生成或加工预览，不生成配套场景或ZIP。需要可调整文字时优先无字角色加程序排字，按[排版参考](../wechat-sticker-maker/references/typography.md)选择整套默认与少量逐张变化；需要比较时使用--compare-typography。只改排版时复用无字原图；已确认带字图用baked模式，不重画以免角色漂移。
+4. 用户授权整包时，复用选定网格，按[配套设计技能](../wechat-sticker-assets-designer/SKILL.md)生成本次需要的配图，补齐pack.json。封面、聊天图标从明确无字素材取得；赞赏配图可选，不因目录里有赞赏图就开通账户功能。
+5. 调用[制作技能](../wechat-sticker-maker/SKILL.md)的build_pack.py完成切片、文字、尺寸、压缩、元数据、预览、校验和ZIP。使用新版本输出目录，保留旧成品；失败只修复相应输入，不重新生成整套图片。
+6. 看实际导出预览，检查角色、文字、顺序和裁剪。给出ZIP及预览绝对链接，说明为静态PNG。尺寸检查通过不代表微信审核通过。本流程止于素材交付，不包含浏览器草稿或提交审核。
 
-### Step 1: Generate Sticker Grid
-Adhere to the **Universal Grid Logic** defined in `skills/grid-sticker-generator/SKILL.md`.
-
-*   **Prompt Construction**:
-    *   **Core**: User's described character/theme.
-    *   **Format Constraints (CRITICAL)**: Inherit all **Visual Design Standards** from `grid-sticker-generator` (4x4 Grid, No Text, Flat Vector).
-    *   **Content Logic**:
-        *   **Default**: Load the **Office Worker Template** (`references/office_worker_template.md`) from the generator skill to fill slots with office memes.
-        *   **Custom**: If user specifies a different theme, generate 16 varied actions relevant to that theme satisfying the grid constraints.
-
-*   **Action**:
-    *   Call `generate_image` with the constructed prompt.
-
-### Step 2: Auto-Process with Sticker Maker
-Once the image is successfully generated, **immediately** trigger the packaging robot.
-
-*   **Command**:
-    ```bash
-    ./skills/wechat-sticker-maker/scripts/run.sh "PATH_TO_GENERATED_IMAGE" --output "OUTPUT_DIR" --layout 4x4
-    ```
-    *   *PATH_TO_GENERATED_IMAGE*: The absolute path returned by the `generate_image` tool.
-    *   *OUTPUT_DIR*: If user specified a custom path, use it. Otherwise, default to `output/stickers_[theme]`.
-
-*   **Metadata Auto-Population (CRITICAL)**:
-    Before moving to the next step, the Agent **must**:
-    *   Automatically edit and fill in `info.txt` and `meta.txt` with actual names, descriptions, and sticker meaning words, replacing the template placeholders, based on the theme generated.
-    *   Copy the original generated grid image into the output folder (e.g. as `source.png` or `grid_image.png`).
-
-### Step 3: Generate Matching WeChat Sticker Assets
-Orchestrate the design of matching promotional materials based on the generated IP character using `skills/wechat-sticker-assets-designer/SKILL.md`.
-
-*   **Action**:
-    1.  **Analyze IP**: Extract visual features (hair, colors, outfit) from the generated grid image.
-    2.  **Generate Assets**:
-        *   **Banner**: Aspect ratio 15:8 (`750x400` target). Rich story-rich scene, no text, no white/transparent background.
-        *   **Solicitation Image**: Aspect ratio 4:3 (`750x560` target). Begging pose, including text "您的赞赏是我们最大的动力！", non-white background.
-        *   **Acknowledgment Image**: Aspect ratio 1:1 (`750x750` target). Celebratory pose, including text "感谢您的慷慨赞赏！", non-white background.
-    3.  **Crop & Resize**:
-        Run the conditional crop and resize wrapper script on each generated asset to achieve the exact WeChat specification sizes:
-        ```bash
-        ./skills/wechat-sticker-assets-designer/scripts/run.sh "PATH_TO_BANNER" --width 750 --height 400 --anchor center
-        ./skills/wechat-sticker-assets-designer/scripts/run.sh "PATH_TO_SOLICITATION" --width 750 --height 560 --anchor top
-        ./skills/wechat-sticker-assets-designer/scripts/run.sh "PATH_TO_ACKNOWLEDGMENT" --width 750 --height 750 --anchor center
-        ```
-        *   **保存路径 (CRITICAL)**: 将裁剪缩放后的三张配套图保存到该表情包输出目录下的 **`assets/` 子目录**中（即 `OUTPUT_DIR/assets/`），**严禁零散放置在外部**。
-
-### Step 4: Final Delivery
-Report the complete production results to the user:
-1.  **Preview**: Show the generated grid sheet and the matching promotional assets (Banner, Solicitation, Acknowledgment).
-2.  **Asset Package**: Provide the absolute clickable link to the consolidated output directory:
-    *   Stickers & Assets Project Folder: `OUTPUT_DIR` (Stickers inside the root folder, and Banner/Solicitation/Acknowledgment assets inside the `assets/` subfolder).
-
-## Example Command
-> "Generate a set of generic 'Cute Robot' stickers and assets under a single folder."
-> "Production line: Make me an office worker set and matching assets for a 'Tired T-Rex'."
+已授权整包时继续完成交付，不额外增加确认步骤；用户明确只看预览时尊重其范围。

@@ -1,75 +1,39 @@
 ---
 name: grid-sticker-generator
-description: A universal 4x4 grid sticker generator. Uses strict visual guidelines (No Text, Transparent BG) and supports loading theme templates from references.
-compatibility: Requires AI image generation tools (such as generate_image or equivalent drawing tools).
+description: 生成角色一致的4x4表情网格预览，支持立体毛发、手绘或矢量等已选风格，以及有字或无字版本；默认真实透明PNG。
 ---
 
-# Universal Grid Sticker Generator
+# 表情网格生成
 
-这是一个通用的 Q 版表情包网格生成器。它定义了一套严格的**视觉设计规范**和**提示词构建框架**，用于生成高质量、易于切割的 4x4 表情包网格图。
+负责角色、动作与画面，不在用户只要预览时自动制作整包。用户指定的风格、文字和背景优先。
 
-## 🎨 核心视觉规范 (Visual Design Standards)
+## 角色与风格
 
-无论生成什么主题，以下规范 **必须严格执行**：
+- 使用用户确认的参考图，明确固定特征：五官、标志性细节、身体比例、尾巴、配色、毛发或笔触。续集变化放在动作、表情、场景和道具，不能靠换文案冒充差异化。
+- 不强制扁平矢量，不将参考图中已有的黑底、格线、文字误作必须复制的设计。
+- 将参考路径、不变特征以及16个条目的编号、文案、动作和道具记录在同一份pack.json；字段见[制作技能](../wechat-sticker-maker/SKILL.md)。
 
-1.  **Format (格式)**:
-    *   **网格布局**: **16-grid sticker sheet**, 4 rows by 4 columns (4x4 布局)。
-    *   **间距**: 彼此之间保持均匀、宽敞的间距，互不粘连 (Even spacing, no overlap)。
-    *   **画幅**: 1:1 正方形。
+## 统一视觉规则
 
-2.  **Style Constraints (风格约束)**:
-    *   **背景**: **Transparent Background** (Output image with transparent background).
-    *   **边缘**: **No outline**, **No white border**, **Clean edges** (无描边、无白边、边缘清晰).
-    *   **风格**: **Vector style**, **Flat color**, **Organic shapes** (矢量、扁平、有机形状).
+- 默认输出真实alpha透明PNG；不能用黑底、白底或棋盘格假装透明。用户明确指定其他背景时按当次要求处理。
+- 4行4列，正方形画布。每格完整图案（角色、尾巴、道具、效果和文案）一起居中；四周至少预留12%的安全留白，不画格线，不跨格或截断。
+- 透明由图像生成工具参数和提示词共同指定，交付前检查像素，不能只看文件扩展名或RGBA模式。
+- 原生清晰度按每格计算：1254像素四列原图的单格约313像素，不能将后期放大称为增加原生细节。
 
-3.  **Content Restrictions (内容禁忌)**:
-    *   **NO TEXT**: **严禁**出现汉字、英文、数字。
-    *   **NO BUBBLES**: **严禁**出现对话气泡。
-    *   **纯视觉表达**: 所有的情绪和梗必须通过肢体语言、表情和漫符 (如 💢, 💦, ❤️) 来表达。
+## 文案
 
-## 📂 模板系统 (Template System)
+- 用户要求文字时保留文字，不再应用全局禁字规则。
+- 需要稳定清晰、可调整的文案时优先生成无字角色，通过制作脚本排字，支持统一或少量情绪字体；先交付的16宫格仍应包含用户要求的文字。render模式需明确指定本机字体，避免缺字；排版调整复用无字原图，不重画角色。
+- 文字辅助表情，不遮挡脸部或关键动作，不为文案过度挤小角色。字体、位置和轻微变化依据情绪选择，保持整套协调；设计与脚本边界见[排版参考](../wechat-sticker-maker/references/typography.md)。
+- 已确认的带字图用baked模式，不重复叠字。艺术字或用户指定随图生成的文字可采用生图方案；逐张检查错字和顺序。
+- 用户要无字版时使用none模式，编号和含义词仍保留在配置中。
 
-本 Skill 支持加载不同的主题模板。模板位于 `references/` 目录下。
+## 动作库
 
-### 默认模板：打工人 (Office Worker)
-*   **Template File**: `references/office_worker_template.md`
-*   **Description**: 包含“摸鱼”、“加班”、“画饼”等32个经典职场梗的随机库。
+只读取适用的动作库，保留其情绪和动作，不从模板重新加载视觉规则：
+- [打工日常](references/office_worker_template.md)
+- [摆烂日常](references/slacker_template.md)
+- [社交回复](references/daily_chat_template.md)
+- [萌宠日常](references/cute_pet_template.md)
 
-### 其它模板：咸鱼摆烂日常 (Slacker / Salted Fish Daily)
-*   **Template File**: `references/slacker_template.md`
-*   **Description**: 包含“躺平”、“吃瓜”、“熬夜”、“快乐水”等32个日常生活的摆烂与情绪梗。
-
-### 其它模板：日常社交敷衍 (Daily Chat & Social Greetings)
-*   **Template File**: `references/daily_chat_template.md`
-*   **Description**: 包含“收到”、“点赞”、“谢谢”、“哈哈”等32个社交聊天高频互动的敷衍与情绪动作。
-
-### 其它模板：猫咪萌宠日常 (Cute Cat & Pet Daily)
-*   **Template File**: `references/cute_pet_template.md`
-*   **Description**: 包含“歪头杀”、“伸懒腰”、“求摸肚皮”、“傲娇”、“拆家”等32个治愈系萌宠行为动作。
-
-## 🛠️ 执行流程 (Execution Workflow)
-
-1.  **确定主题与角色**:
-    *   分析用户输入，确定角色形象（如：熊猫程序员、美少女战士产品经理）。
-    *   确定使用的模板（默认为 Office Worker，或用户自定义其他主题）。
-
-2.  **构建 Prompt**:
-    *   **Header**: Load Role & Style from SKILL guidelines.
-    *   **Subject**: "Cute Q-version character, [User Role Description]".
-    *   **Action List**: 
-        *   如果使用模板：从模板的库中抽取 (16 - N) 个动作补充到列表中。
-        *   如果无模板：根据主题生成 16 个多样化的通用情绪动作（喜怒哀乐、日常行为）。
-    *   **Negative Prompts**: `text, words, letters, chinese characters, speech bubble, watermark, signature`.
-
-3.  **生成图像**:
-    *   调用绘图工具 (`Nano-Banana Pro` / `generate_image`) 输出图像。
-
-## 使用示例
-
-**使用内置打工人模板:**
-> "生成一个 '秃顶的猫咪程序员' 表情包。"
-> (系统自动加载 office_worker_template.md 的梗库进行补全)
-
-**自定义主题 (不使用模板):**
-> "生成一套 '快乐的小狗' 表情包，包含跑、跳、睡觉、吃骨头等动作。"
-> (系统基于通用 4x4 规范，自由发挥小狗的日常动作)
+先列出16个场景，检查姿势、情绪、道具与使用意图是否重复，再生成。需要续集时对照上一套条目，避免只是同一站姿配不同文字。画风和角色一致性由视觉检查确认，脚本不能代替。

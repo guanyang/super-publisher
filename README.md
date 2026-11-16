@@ -2,6 +2,8 @@
 
 Super Publisher 是一个专为 Agent 设计的插件，旨在实现自动化的多平台内容发布。
 
+版本更新记录请查看 [更新日志（CHANGELOG）](CHANGELOG.md)。
+
 ## 🌟 核心功能
 
 ### Toutiao Publisher (`skills/toutiao-publisher`)
@@ -19,19 +21,19 @@ Super Publisher 是一个专为 Agent 设计的插件，旨在实现自动化的
 
 ### WeChat Sticker Maker (`skills/wechat-sticker-maker`)
 > 详细文档请参考 [skills/wechat-sticker-maker/README.md](skills/wechat-sticker-maker/README.md)。
-- **智能切分**：自动识别或指定网格布局（九宫格、十六宫格等），精准切分拼图。
-- **规范适配**：自动生成符合微信规范的 240x240 主图和 50x50 聊天页图标。
-- **元数据生成**：自动生成含义词配置表 (`meta.txt`) 和专辑信息模板 (`info.txt`)，加速提交流程。
+- **可靠切分**：明确布局并寻找透明间隙，拒绝穿过可见内容；默认真实透明PNG、等比居中和安全留白。
+- **整包加工**：从一份 `pack.json` 导出240主图、120缩略图、50小图、配图、文案、预览、检查清单和ZIP。
+- **独立排字与安全重跑**：支持情绪字体、逐张排版与A/B对照，或保留已有文案；保留原图，拒绝覆盖既有成品和元数据。
 
 ### WeChat Sticker Assets Designer (`skills/wechat-sticker-assets-designer`)
 > 详细文档请参考 [skills/wechat-sticker-assets-designer/README.md](skills/wechat-sticker-assets-designer/README.md)。
 - **规范化生成**：根据用户提供的表情包 IP 形象，一键生成符合微信表情官方规范的横幅 (Banner, 750x400)、赞赏引导图 (750x560) 和赞赏致谢图 (750x750)。
 - **条件化裁剪**：内置 Pillow 条件裁剪与缩放脚本，确保导出的图稿像素和构图精准无误。
-- **文案深度整合**：支持自动排版和在引导图及致谢图中完美融入指定官方中文字体文案。
+- **继承角色画风**：支持立体毛发、手绘、矢量等参考风格，赞赏配图可选，示例文案可替换；尺寸加工保留原图。
 
 ### Grid Sticker Generator (`skills/grid-sticker-generator`)
 > 详细文档请参考 [skills/grid-sticker-generator/README.md](skills/grid-sticker-generator/README.md)。
-- **通用生成**：基于标准化的 4x4 网格视觉规范，生成无字、透底、矢量风格的网格图。
+- **通用生成**：按已确认画风生成居中留白的4x4透明网格，支持带字或无字，不强制扁平矢量。
 - **模板支持**：内置“打工人”模板，支持加载不同主题的梗库和动作列表。
 
 ### Sticker Factory (`skills/sticker-factory`)
@@ -139,6 +141,14 @@ cp -r skills/* /path/to/your/workspace/.agents/skills/
 *   **一句话生产**：直接对 Agent 发送指令，例如：`"/sticker-factory 基于 [角色形象] 制作一套咸鱼摆烂的表情包并生成配套素材"`。
 *   **全流程自动化**：工厂会自动调用 `grid-sticker-generator` 生成 16 宫格图片，接着通过 `wechat-sticker-maker` 智能切片与命名，最后调用 `wechat-sticker-assets-designer` 智能绘制适配该 IP 角色风格的 Banner 和赞赏图。
 *   **统一交付归档**：所有最终成果（包含切片、图标、元数据 `meta.txt` / `info.txt` 描述及配套 Banner/赞赏图等）均统一保存在 `output/stickers_[theme]` 目录下，免去零散整理的烦恼。
+
+用户只要预览时停在16宫格；确认后复用已选网格制作整包。配置和可执行入口见 [pack.json说明](skills/wechat-sticker-maker/references/pack-spec.md)：
+
+```bash
+python3 skills/wechat-sticker-maker/scripts/build_pack.py --spec pack.json --output output/pack_v1
+```
+
+所有导出按本地制作目标校验，不代表已通过微信审核；默认不操作草稿或提交审核。
 
 ### 2. 保证 IP 角色一致性
 在生成配套素材（Banner、赞赏引导图、致谢图）时，为确保生成的图片与表情包原图的角色及画风一致：

@@ -1,167 +1,157 @@
-import sys
-import os
+"""Slice explicitly specified sticker grids without guessing their layout."""
+
 import argparse
-from PIL import Image
+import json
+import shutil
+import tempfile
+from pathlib import Path
+
+from PIL import Image, ImageOps
 
 
-
-def determine_layout(img_width, img_height):
-    """
-    根据宽高比猜测网格布局
-    """
-    ratio = img_width / img_height
-    # 宽高接近 -> 3x3 (9宫格) 或 2x2 (4宫格)
-    if 0.9 < ratio < 1.1:
-        return 3, 3
-    # 竖屏 2:3 -> 3行2列 (6宫格 竖排)
-    if 0.6 < ratio < 0.75:
-        return 3, 2
-    # 横屏 3:2 -> 2行3列 (6宫格 横排)
-    if 1.3 < ratio < 1.6:
-        return 2, 3
-    # 竖屏 3:4 -> 4行3列 (12宫格)
-    if 0.7 < ratio < 0.8:
-        return 4, 3
-    # 横屏 4:3 -> 3行4列 (12宫格)
-    if 1.25 < ratio < 1.4:
-        return 3, 4
-
-    print(
-        f"Warning: Cannot auto-detect layout for ratio {ratio:.2f}. Defaulting to 3x3."
-    )
-    return 3, 3
+ALPHA_THRESHOLD = 24
 
 
-def process_image(image_path, layout_str, output_dir):
-    if not os.path.exists(image_path):
-        print(f"Error: File not found: {image_path}")
-        sys.exit(1)
-
+def parse_layout(layout):
     try:
-        img = Image.open(image_path)
-        # Ensure image is RGBA to verify transparency is handled correctly
-        # This prevents P-mode (palette) images from turning black on resize/save
-        img = img.convert("RGBA")
-    except Exception as e:
-        print(f"Error opening image: {e}")
-        sys.exit(1)
-
-    width, height = img.size
-    print(f"Image Size: {width}x{height}")
+        rows, cols = map(int, layout.lower().split("x"))
+    except (AttributeError, ValueError):
+        raise ValueError("必须明确指定行数x列数，例如 --layout 4x4") from None
+    if rows <= 0 or cols <= 0:
+        raise ValueError("行列数必须为正数")
+    return rows, cols
 
 
-    if layout_str:
-        try:
-            rows, cols = map(int, layout_str.lower().split("x"))
-        except ValueError:
-            print("Error: Layout must be in format ROWSxCOLS (e.g. 3x3)")
-            sys.exit(1)
+def check_transparency(image):
+    low, high = image.getchannel("A").getextrema()
+    if low != 0 or high <= ALPHA_THRESHOLD:
+        raise ValueError("需要含有效图案和真实透明背景的图片；转成RGBA不等于去底")
+
+
+def visible_bbox(image):
+    return image.getchannel("A").point(
+        lambda value: 255 if value > ALPHA_THRESHOLD else 0
+    ).getbbox()
+
+
+def fit_center(image, size, padding=12):
+    box = visible_bbox(image)
+    if box is None:
+        raise ValueError("发现空白切片")
+    box = (max(0, box[0] - 2), max(0, box[1] - 2),
+           min(image.width, box[2] + 2), min(image.height, box[3] + 2))
+    artwork = ImageOps.contain(image.crop(box), (size - 2 * padding,) * 2,
+                               Image.Resampling.LANCZOS)
+    canvas = Image.new("RGBA", (size, size))
+    canvas.alpha_composite(artwork, ((size - artwork.width) // 2,
+                                    (size - artwork.height) // 2))
+    return canvas
+
+
+def axis_boundaries(image, count, axis, explicit=None, allow_opaque=False):
+    length = image.width if axis == "x" else image.height
+    if explicit is not None:
+        if (len(explicit) != count + 1 or explicit[0] != 0 or explicit[-1] != length
+                or any(type(v) is not int for v in explicit)
+                or any(a >= b for a, b in zip(explicit, explicit[1:]))):
+            raise ValueError(f"{axis}轴边界必须从0递增至{length}，共{count + 1}项")
+        boundaries = list(explicit)
+    elif allow_opaque:
+        boundaries = [round(i * length / count) for i in range(count + 1)]
     else:
-        rows, cols = determine_layout(width, height)
-
-    print(f"Layout: {rows} rows x {cols} cols (Total {rows * cols})")
-
-    cell_width = width / cols
-    cell_height = height / rows
-
-    # Create directories
-    main_dir = os.path.join(output_dir, "main")
-    icon_dir = os.path.join(output_dir, "icon")
-
-    os.makedirs(main_dir, exist_ok=True)
-    os.makedirs(icon_dir, exist_ok=True)
-
-    meta_file = os.path.join(output_dir, "meta.txt")
-    info_file = os.path.join(output_dir, "info.txt")
-    meta_lines = []
-
-    count = 0
-    total = rows * cols
-
-    for r in range(rows):
-        for c in range(cols):
-            count += 1
-            # Accurate floating point crop box
-            left = c * cell_width
-            upper = r * cell_height
-            right = (c + 1) * cell_width
-            lower = (r + 1) * cell_height
-
-            box = (left, upper, right, lower)
-            # Crop
-            cell = img.crop(box)
+        alpha = image.getchannel("A")
+        boundaries = [0]
+        for i in range(1, count):
+            expected = i * length / count
+            radius = max(2, round(length / count * 0.15))
+            start, stop = max(1, round(expected) - radius), min(length, round(expected) + radius)
+            runs, run = [], []
+            for position in range(start, stop):
+                box = ((position, 0, position + 1, image.height) if axis == "x"
+                       else (0, position, image.width, position + 1))
+                if alpha.crop(box).getextrema()[1] <= ALPHA_THRESHOLD:
+                    run.append(position)
+                else:
+                    if len(run) >= 2:
+                        runs.append(run)
+                    run = []
+            if len(run) >= 2:
+                runs.append(run)
+            if not runs:
+                raise ValueError(f"{axis}轴第{i}处分隔线附近没有可靠透明间隙，请检查图片或提供边界")
+            gap = min(runs, key=lambda values: abs((values[0] + values[-1]) / 2 - expected))
+            boundaries.append(round((gap[0] + gap[-1]) / 2))
+        boundaries.append(length)
+    if not allow_opaque:
+        alpha = image.getchannel("A")
+        for position in boundaries[1:-1]:
+            box = ((position, 0, position + 1, image.height) if axis == "x"
+                   else (0, position, image.width, position + 1))
+            if alpha.crop(box).getextrema()[1] > ALPHA_THRESHOLD:
+                raise ValueError(f"{axis}轴边界{position}穿过可见内容，拒绝切割")
+    return boundaries
 
 
-            # Stickers: 240x240 (Expression Image)
-            sticker = cell.resize((240, 240), Image.Resampling.LANCZOS)
-            sticker.save(os.path.join(main_dir, f"{count:02d}.png"), "PNG")
+def slice_grid(image, layout, boundaries=None, allow_opaque=False):
+    rows, cols = parse_layout(layout)
+    image = image.convert("RGBA")
+    if not allow_opaque:
+        check_transparency(image)
+    boundaries = boundaries or {}
+    xs = axis_boundaries(image, cols, "x", boundaries.get("x"), allow_opaque)
+    ys = axis_boundaries(image, rows, "y", boundaries.get("y"), allow_opaque)
+    cells = [image.crop((xs[c], ys[r], xs[c + 1], ys[r + 1]))
+             for r in range(rows) for c in range(cols)]
+    if any(visible_bbox(cell) is None for cell in cells):
+        raise ValueError("发现空白格子，请检查布局与边界")
+    return cells, {"x": xs, "y": ys}
 
-            # Icons: 50x50 (Chat Page Icon)
-            icon = cell.resize((50, 50), Image.Resampling.LANCZOS)
-            icon_path = os.path.join(icon_dir, f"{count:02d}.png")
-            icon.save(icon_path, "PNG")
 
-            # Save candidates from the first sticker (01.png)
-            if count == 1:
-                # Cover Candidate (240x240) - Same as main sticker
-                # Note: Official spec requires transparent background, no square borders.
-                # Our crop is rectangular/square. User needs to ensure source is transparent/appropriate.
-                cover_candidate_path = os.path.join(output_dir, "cover_candidate.png")
-                sticker.save(cover_candidate_path, "PNG")
+def write_stickers(cells, output):
+    for folder in ["main", "thumbnail", "icon", "original_slices"]:
+        (output / folder).mkdir()
+    for number, cell in enumerate(cells, 1):
+        filename = f"{number:02d}.png"
+        cell.save(output / "original_slices" / filename, optimize=True)
+        for folder, size, pad in [("main", 240, 12), ("thumbnail", 120, 6), ("icon", 50, 3)]:
+            fit_center(cell, size, pad).save(output / folder / filename, optimize=True)
 
-                # Chat Icon Candidate (50x50) - Same as icon
-                # Note: Official spec: Headshot preferred, no white border.
-                chat_icon_candidate_path = os.path.join(
-                    output_dir, "chat_icon_candidate.png"
-                )
-                icon.save(chat_icon_candidate_path, "PNG")
 
-            # Add to meta lines
-            meta_lines.append(f"{count:02d}.png\t[请输入表情含义]")
+def process_image(image_path, layout_str, output_dir, boundaries=None, allow_opaque=False):
+    output = Path(output_dir)
+    if output.exists():
+        raise ValueError("输出目录已存在，请使用新的版本目录；不会覆盖文案或混入旧文件")
+    with Image.open(image_path) as image:
+        cells, cuts = slice_grid(image, layout_str, boundaries, allow_opaque)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory(prefix=".stickers-", dir=output.parent) as temporary:
+        stage = Path(temporary) / "pack"
+        stage.mkdir()
+        write_stickers(cells, stage)
+        (stage / "source").mkdir()
+        shutil.copy2(image_path, stage / "source" / Path(image_path).name)
+        (stage / "meta.txt").write_text("".join(
+            f"{i:02d}.png\t[请输入表情含义]\n" for i in range(1, len(cells) + 1)), encoding="utf-8")
+        (stage / "info.txt").write_text("【表情名称】\n【表情介绍】\n【一句话简介】\n", encoding="utf-8")
+        (stage / "cuts.json").write_text(json.dumps(cuts, indent=2) + "\n", encoding="utf-8")
+        stage.rename(output)
+    print(f"已切分{len(cells)}张；元数据仍需填写，不代表已通过整包校验：{output.resolve()}")
 
-            if count % 3 == 0:
-                print(f"Processed {count}/{total}...")
 
-    print(f"Success! Generated {count} items.")
-    print(f"  - Main Stickers (240x240): {main_dir}")
-    print(f"  - Chat Icons (50x50):      {icon_dir}")
-
-    # Write meta file
-    with open(meta_file, "w", encoding="utf-8") as f:
-        f.write("\n".join(meta_lines))
-    print(f"  - Meta Info (Meanings):    {meta_file}")
-
-    # Write info file (Name, Intro)
-    info_content = """=== 微信表情专辑信息模板 ===
-【表情名称】 (必填, 不超8个汉字, 无标点): 
-【表情介绍】 (必填, 不超80个汉字): 
-【一句话简介】 (必填, 不超11个汉字, 无标点): 
-
-=== 图片素材要求 ===
-1. [头像/封面图] (240x240, PNG, 透明背景): 已自动生成候选图 cover_candidate.png (取自第1张)
-2. [聊天页图标] (50x50, PNG, 透明背景): 已自动生成候选图 chat_icon_candidate.png (取自第1张)
-"""
-    with open(info_file, "w", encoding="utf-8") as f:
-        f.write(info_content)
-    print(f"  - Album Info Template:     {info_file}")
-
-    # Generate candidate Cover and Chat Icon from the first processed cell
-    # Re-open the first image crop to avoid holding all in memory if possible,
-    # but here we can just do it if we are still inside the loop?
-    # Actually, let's just do it after the loop using the last 'cell' is risky if loop didn't run.
-    # Safe way: Process the first cell again or save it during loop.
-    pass
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("image")
+    parser.add_argument("--layout", required=True, help="明确行数x列数，例如4x4")
+    parser.add_argument("--output", default="sticker_output")
+    parser.add_argument("--boundaries", type=Path, help='包含x/y边界数组的JSON')
+    parser.add_argument("--allow-opaque", action="store_true", help="仅用户明确要求保留不透明背景时使用")
+    args = parser.parse_args()
+    try:
+        cuts = json.loads(args.boundaries.read_text()) if args.boundaries else None
+        process_image(args.image, args.layout, args.output, cuts, args.allow_opaque)
+    except (ValueError, OSError) as exc:
+        parser.exit(2, f"错误：{exc}\n")
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="WeChat Sticker Slicer")
-    parser.add_argument("image", help="Path to the source grid image")
-    parser.add_argument(
-        "--layout", help="Grid layout, e.g., '3x3', '2x3'. If ignored, auto-detects."
-    )
-    parser.add_argument(
-        "--output", default="sticker_output", help="Output directory path"
-    )
-
-    args = parser.parse_args()
-    process_image(args.image, args.layout, args.output)
+    main()
