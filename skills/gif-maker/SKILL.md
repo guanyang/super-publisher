@@ -1,79 +1,39 @@
 ---
 name: gif-maker
-description: 将序列帧图片或精灵表（Sprite Sheet）转换为高质量 GIF 动画。支持自定义 FPS、布局切分及循环播放。
+description: 将同一动作的连续帧或明确布局精灵表制作成GIF，支持透明边缘、公共构图、动作顺序、逐帧时长、静态叠图、体积校验及解码预览。
 ---
 
-# GIF 动画生成器 (GIF Maker)
+# GIF 动画制作
 
-本 Skill 将同一动作的真实连续帧或动作精灵表转换为 GIF。16个不同含义的独立表情不能当作同一动画的16帧；静态PNG整包不调用本技能。需要Python、Pillow，压缩需要gifsicle。
+上游负责IP定形和动作帧生成，本技能负责连续帧加工与GIF导出。输入应为有时间顺序的画面，不能把16个独立含义的表情或九宫格IP转面图自动当作动作序列。需要Python 3.9+、Pillow>=10；超限压缩需要gifsicle。
 
-## 核心功能
-
-*   **序列帧转 GIF**：支持读取文件夹内的 `png`, `jpg` 序列，按文件名排序合成 GIF。
-*   **精灵表转 GIF**：支持读取单张 Grid 图片（如 4x4 精灵表），自动切分并合成为 GIF。
-*   **智能压缩**：支持通过 `--max-size` 参数指定目标文件大小（如 950KB），自动调整压缩参数以满足微信表情包等平台的体积限制。
-*   **参数控制**：
-    *   `--fps`：指定每秒帧数（默认为 12）。
-    *   `--layout`：指定精灵表布局（如 `4x4`），仅在这个模式下需要。
-    *   永久循环固定为loop=0，不提供--loop参数。
-    *   `--max-size`: 指定最大体积 (KB)。
-
-## 使用指南
-
-### 1. 快速开始
-
-无需手动安装依赖，直接运行脚本即可。工具会自动创建虚拟环境 (`.venv`) 并安装所需依赖。
+## 使用
 
 ```bash
-# 基本用法 1：从文件夹读取序列帧
-./skills/gif-maker/scripts/run.sh /path/to/frame_folder --output my_anim.gif
-
-# 基本用法 2：从单张精灵表生成 (需要指定布局)
-./skills/gif-maker/scripts/run.sh /path/to/sheet.png --layout 4x4 --output my_sheet_anim.gif
-
-# 常用选项：
-# - 指定 FPS (例如 24)
-./skills/gif-maker/scripts/run.sh /path/to/folder --fps 24
-
-# - 开启自动压缩 (限制文件大小在 950KB 以内)
-./skills/gif-maker/scripts/run.sh /path/to/folder --max-size 950
+# 连续帧：自然排序，保留输入尺寸
+<skill-dir>/scripts/run.sh frames/ --output output/action_v1.gif --fps 8
+# 精灵表：明确行数x列数，公共画布加工到240px
+<skill-dir>/scripts/run.sh motion.png --layout 2x4 --size 240 --anchor bottom --output output/action_v2.gif --max-size 950
+# 调整关键帧顺序与停顿：编号从1开始，时长对应播放列表
+<skill-dir>/scripts/run.sh frames/ --sequence 1,2,3,2,1 --durations 80,80,300,80,200 --output output/action_v3.gif
 ```
 
-### 2. (可选) 手动安装
+950KiB仅是示例制作目标；尺寸和体积以用户要求及实际提交页为准，不写成平台通用审核规则。需要透明阈值、显式切分边界、固定文字图层、优化或参数细节时读取[参数与复核](references/animation-options.md)。
 
-如果您希望手动管理环境（注意：压缩功能依赖 `gifsicle` 工具，请确保系统已安装）：
-- macOS: `brew install gifsicle`
-- Ubuntu: `sudo apt-get install gifsicle`
+## 制作规则
 
-```bash
-python3 -m venv skills/gif-maker/.venv
-source skills/gif-maker/.venv/bin/activate
-pip install -r skills/gif-maker/requirements.txt
-python3 skills/gif-maker/scripts/make_gif.py ...
-```
+- 使用用户确认的IP参考；同一动画保持镜头、角色比例、材质与光照一致。先设计动作起势、变化、收势和循环衔接；增加真实中间帧改善连续性，修改fps只改变播放节奏。
+- PNG/JPG/JPEG/静态WebP按自然顺序读取；任何坏帧停止处理。动画输入先明确拆帧，避免静默只取第一帧。
+- 透明精灵表优先复用同仓库wechat-sticker-maker的透明间隙寻边逻辑，支持显式边界；找不到安全缝隙时停止。独立安装时仅接受安全的等分/显式切线，不能静默截断角色或道具。
+- 所有帧共享坐标系、裁剪框、比例和画布锚点，保留跳跃、后仰等真实位移。anchor控制整段动画在画布的位置；逐帧包围盒居中不属于自动修复抖动的方法。
+- 保留原始RGBA输入。GIF导出显式处理透明阈值，使用共享调色板及专用透明索引。默认阈值128可调整，仍需检查胡须、毛发和细文字；原图被底色污染的边缘不能保证靠阈值完全修复。
+- 固定文案通过上游排字工具生成一次，作为与输出等尺寸的透明静态图层叠加；提前为文案留空间。已有正确文字的连续帧直接使用，避免重复叠字。
+- 体积超限时先无损优化，再有限尝试有损压缩，保持尺寸、显示时序、循环和透明。未达到目标即失败。额外--optimize可在已达标时尝试无损优化，缺少gifsicle不阻止已达标输出。
 
-## 参数说明
+## 交付
 
-*   `source`: 输入路径。可以是包含图片的文件夹，也可以是单张图片文件。
-*   `--output` (`-o`): 输出 GIF 文件名，默认为 `output.gif`。
-*   `--fps`: 帧率，默认为 12。
-*   `--layout`: 仅当 `source` 为单文件时使用，格式为 `行数x列数` (如 `4x4`)。
-*   `--max-size`: (可选) 启用 GIF 压缩，指定目标文件最大大小 (KB)。仅当原始文件超过此大小时才会尝试压缩。
+输出GIF、同名.animation.json和.preview.png，存在任一目标文件就使用新版本路径。编码、压缩、解码与预览在临时目录完成，全部通过才发布；失败不留下假成功成品。成功返回一行JSON，失败退出码为2。
 
-## 示例
+交付前检查解码预览与实际GIF：动作和循环自然，IP一致，文案清楚，没有裁切、杂色、残影或意外闪烁。脚本校验画布、显示时间线、循环、透明及体积；有损压缩后仍需视觉判断质量。编码帧数可能因合并相同画面而减少，应以解码后的显示结果和总时长验收。
 
-假设你有一个文件夹 `frames/` 包含 `01.png`, `02.png` ... `10.png`：
-
-```bash
-./skills/gif-maker/scripts/run.sh frames/ -o animation.gif --fps 15
-```
-
-假设你有一张 `sheet.png` 是 4x4 的动作序列，且需要生成符合微信表情包规范（<1MB）的 GIF：
-
-```bash
-./skills/gif-maker/scripts/run.sh sheet.png --layout 4x4 -o action.gif --max-size 950
-```
-
-## 结果检查
-
-输出已存在时使用新版本路径，禁止覆盖。fps及行列数需为正数，帧尺寸必须一致。压缩不得通过缩小尺寸达标；超过体积目标或缺少压缩工具时明确失败，不报告已符合限制。导出后核对像素尺寸、帧数、循环和文件大小，仍需视觉检查动作连贯性。
+给出GIF和预览的绝对文件链接。尺寸与体积检查通过只代表本地目标满足，不代表平台审核通过。
