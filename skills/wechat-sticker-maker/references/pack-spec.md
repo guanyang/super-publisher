@@ -38,7 +38,8 @@
 - `caption_mode=baked`：输入网格已含正确文案，不再加字。
 - `caption_mode=none`：输出无字表情，items.caption仍用于meta.txt。
 - `boundaries`可选：`{"x":[0,319,644,938,1254],"y":[0,316,626,929,1254]}`。这是小河狸办公原图的坐标示例，不能照搬给其他尺寸。
-- `assets`在预览阶段可以省略。整包需要cover/chat_icon/banner；赞赏两张可同时省略，提供则成对。
+- `assets`在预览阶段可以省略。整包默认需要cover/chat_icon/banner/reward_guide/reward_thanks，缺少赞赏两图不能称为默认完整交付。
+- `include_rewards`默认为true；只有用户明确不要赞赏配图时才设为false，并从assets中同时移除reward_guide和reward_thanks。此选择保存在导出的pack.json中，重建和校验沿用；未提赞赏或未开通赞赏功能不代表选择省略。提供赞赏配图时始终须成对。
 - `crop`是源图上的整数像素框，不包含文字，不越界。不要把一张带字图中所有alpha像素都当作角色头部。
 
 ## 可选的情绪字体与排版

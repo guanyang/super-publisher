@@ -29,7 +29,7 @@ Super Publisher 是一个专为 Agent 设计的插件，旨在实现自动化的
 > 详细文档请参考 [skills/wechat-sticker-assets-designer/README.md](skills/wechat-sticker-assets-designer/README.md)。
 - **规范化生成**：根据用户提供的表情包 IP 形象，一键生成符合微信表情官方规范的横幅 (Banner, 750x400)、赞赏引导图 (750x560) 和赞赏致谢图 (750x750)。
 - **条件化裁剪**：内置 Pillow 条件裁剪与缩放脚本，确保导出的图稿像素和构图精准无误。
-- **继承角色画风**：支持立体毛发、手绘、矢量等参考风格，赞赏配图可选，示例文案可替换；尺寸加工保留原图。
+- **继承角色画风**：支持立体毛发、手绘、矢量等参考风格，整包默认包含赞赏引导图及致谢图，仅用户明确不要时成对省略；示例文案可替换，尺寸加工保留原图。
 
 ### Grid Sticker Generator (`skills/grid-sticker-generator`)
 > 详细文档请参考 [skills/grid-sticker-generator/README.md](skills/grid-sticker-generator/README.md)。

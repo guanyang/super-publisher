@@ -1,6 +1,6 @@
 # 微信表情配套素材
 
-继承已确认角色和画风，独立生成横幅及可选的赞赏引导、致谢场景。尺寸和背景约定见[SKILL.md](SKILL.md)，示例赞赏文案可替换，不称为强制官方文案。
+继承已确认角色和画风，独立生成横幅、赞赏引导及致谢场景。整包默认包含赞赏两图，只有用户明确不要时才成对省略。尺寸和背景约定见[SKILL.md](SKILL.md)，示例赞赏文案可替换，不称为强制官方文案。
 
 ```bash
 python3 skills/wechat-sticker-assets-designer/scripts/crop_and_resize.py banner-original.png \

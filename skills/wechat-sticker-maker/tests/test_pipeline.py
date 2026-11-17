@@ -39,7 +39,9 @@ class PipelineTests(unittest.TestCase):
             "items": [{"id": i, "caption": f"动作{i}"} for i in range(1, 17)],
             "assets": {"cover": {"source": "grid.png", "crop": [0, 0, 100, 100]},
                        "chat_icon": {"source": "grid.png", "crop": [0, 0, 100, 100]},
-                       "banner": {"source": "banner.png"}},
+                       "banner": {"source": "banner.png"},
+                       "reward_guide": {"source": "banner.png"},
+                       "reward_thanks": {"source": "banner.png"}},
         }
 
     def spec_path(self):
@@ -115,6 +117,8 @@ class PipelineTests(unittest.TestCase):
         with zipfile.ZipFile(result["archive"]) as zipped:
             self.assertIsNone(zipped.testzip())
             self.assertIn("complete/assets/banner.png", zipped.namelist())
+            self.assertIn("complete/assets/reward_guide.png", zipped.namelist())
+            self.assertIn("complete/assets/reward_thanks.png", zipped.namelist())
         self.assertFalse(json.loads((out / "manifest.json").read_text())["platform_review_verified"])
 
     def test_preview_does_not_need_or_create_assets_or_zip(self):
@@ -134,11 +138,38 @@ class PipelineTests(unittest.TestCase):
         self.assertEqual(validate_pack(second)["count"], 16)
 
     def test_failure_leaves_no_complete_directory(self):
-        self.spec["assets"]["reward_guide"] = {"source": "banner.png"}
+        self.spec["assets"].pop("reward_thanks")
         with self.assertRaisesRegex(ValueError, "成对"):
             build_pack(self.spec_path(), self.root / "broken")
         self.assertFalse((self.root / "broken").exists())
         self.assertFalse((self.root / "broken.zip").exists())
+
+    def test_complete_build_requires_reward_assets_by_default(self):
+        for name in ["reward_guide", "reward_thanks"]:
+            self.spec["assets"].pop(name)
+        with self.assertRaisesRegex(ValueError, "reward_"):
+            build_pack(self.spec_path(), self.root / "broken")
+        self.assertFalse((self.root / "broken").exists())
+        self.assertFalse((self.root / "broken.zip").exists())
+
+    def test_explicit_reward_opt_out_survives_rebuild_and_validation(self):
+        self.spec["include_rewards"] = False
+        for name in ["reward_guide", "reward_thanks"]:
+            self.spec["assets"].pop(name)
+        first, second = self.root / "first", self.root / "second"
+        build_pack(self.spec_path(), first)
+        build_pack(first / "pack.json", second)
+        self.assertEqual(validate_pack(second)["count"], 16)
+        self.assertFalse((second / "assets/reward_guide.png").exists())
+        self.assertFalse((second / "assets/reward_thanks.png").exists())
+
+    def test_validation_rejects_missing_reward_pair_by_default(self):
+        out = self.root / "complete"
+        build_pack(self.spec_path(), out)
+        for name in ["reward_guide", "reward_thanks"]:
+            (out / f"assets/{name}.png").unlink()
+        with self.assertRaisesRegex(ValueError, "reward_"):
+            validate_pack(out)
 
     def test_validation_rejects_extra_old_sticker(self):
         out = self.root / "complete"

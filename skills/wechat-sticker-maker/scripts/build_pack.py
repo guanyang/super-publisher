@@ -99,6 +99,17 @@ def render_item(cell, item, fonts, defaults):
     return image, dict(details, id=item["id"], caption=item["caption"])
 
 
+def validate_asset_selection(assets, include_rewards=True):
+    if type(include_rewards) is not bool:
+        raise ValueError("include_rewards必须为布尔值；仅用户明确不要赞赏配图时设为false")
+    if ("reward_guide" in assets) != ("reward_thanks" in assets):
+        raise ValueError("赞赏引导图与致谢图须成对提供")
+    required = set(ASSET_SIZES) if include_rewards else {"cover", "chat_icon", "banner"}
+    missing = required - set(assets)
+    if missing:
+        raise ValueError(f"完整包缺少配套素材：{', '.join(sorted(missing))}；先看预览请用--preview-only")
+
+
 def validate_pack(directory, require_assets=True):
     directory = Path(directory)
     fields = {}
@@ -140,10 +151,9 @@ def validate_pack(directory, require_assets=True):
                             "bytes": path.stat().st_size})
     if require_assets:
         assets = directory / "assets"
-        required = {"cover", "chat_icon", "banner"}
         present = {p.stem for p in assets.glob("*.png")}
-        if not required <= present or bool("reward_guide" in present) != bool("reward_thanks" in present):
-            raise ValueError("封面、聊天图标、横幅缺失，或赞赏配图未成对提供")
+        spec = json.loads((directory / "pack.json").read_text(encoding="utf-8"))
+        validate_asset_selection(present, spec.get("include_rewards", True))
         for name in present:
             if name not in ASSET_SIZES:
                 raise ValueError(f"未知配套素材：{name}")
@@ -207,8 +217,8 @@ def build_pack(spec_path, output, preview_only=False, compare_typography=False):
             image = fit_center(cell, 240, 12)
         images.append(image)
     assets = spec.get("assets", {})
-    if not preview_only and not {"cover", "chat_icon", "banner"} <= set(assets):
-        raise ValueError("完整打包需提供无字cover、chat_icon及banner；先看预览请用--preview-only")
+    if not preview_only:
+        validate_asset_selection(assets, spec.get("include_rewards", True))
     output.parent.mkdir(parents=True, exist_ok=True)
     with tempfile.TemporaryDirectory(prefix=".build-stickers-", dir=output.parent) as temporary:
         stage = Path(temporary) / "pack"
