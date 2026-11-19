@@ -60,6 +60,12 @@ cp -r skills/* /path/to/your/workspace/.agents/skills/
 
 对 Agent 说「用 `sticker-factory` 把这只小河狸做成一套办公室表情，先看 16 宫格」。满意后可以直接说「输出整包」。流程会复用选定的网格，导出静态 PNG、缩略图、横幅及赞赏配图，并提供检查预览和 ZIP。完整流程见[表情包生产指南](skills/sticker-factory/README.md)。
 
+## 成果示例
+
+| 办公室表情 16 宫格 | 「收到」循环动图 | 微信拆红包页示意 |
+| :---: | :---: | :---: |
+| <a href="docs/images/sticker-factory-office-preview.jpg"><img src="docs/images/sticker-factory-office-preview.jpg" alt="小河狸办公室表情 16 宫格" height="220"></a> | <a href="docs/images/animated-sticker-received.gif"><img src="docs/images/animated-sticker-received.gif" alt="小河狸抬手敬礼的收到动图" height="220"></a> | <a href="docs/images/wechat-red-packet-workstart.jpg"><img src="docs/images/wechat-red-packet-workstart.jpg" alt="小河狸开工红包的拆封页示意，祝福语下方留白，右上角叠加青芽挂件" height="220"></a> |
+
 ## 技能目录
 
 按手头的素材和想要的成品选技能。
