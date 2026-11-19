@@ -1,0 +1,3 @@
+interface:
+  display_name: "微信红包封面设计"
+  short_description: "设计微信静态红包封面和可选挂件，支持按需选风格、构图预览与素材导出"

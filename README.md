@@ -19,6 +19,14 @@ Super Publisher 是一个专为 Agent 设计的插件，旨在实现自动化的
 - **自动化图片与外链洗练**：自动接管网络引文并降级为文尾学术标注；并支持自动上传处理本地的配图文件上微信 CDN 素材库。
 - **多租户极客沙盒 (Multi-tenant)**：原生内置了凭据分离墙，利用 `--account` 一键切分并加载多重维度的测试或商业公号资源池。
 
+### WeChat Red Packet Designer (`skills/wechat-red-packet-designer`)
+> 从主题、参考角色或现成画稿制作静态微信红包封面。见[技能说明](skills/wechat-red-packet-designer/SKILL.md)。
+- [风格目录与图库](skills/wechat-red-packet-designer/references/styles.md)包含 5 组九宫格和 45 个创意样张，供未指定风格时参考。
+- 支持焦点裁切和独立版本导出，复用同一画稿进行构图修改。
+- 可选导出静态[封面挂件和气泡挂件](skills/wechat-red-packet-designer/references/charms.md)，按官方模板检查透明避让区。
+- 需要整包时可[从所选预览打包](skills/wechat-red-packet-designer/references/export.md)，上传素材原样入包。
+- 用实际 JPEG 同时检查完整画面、遮挡和小尺寸效果，按需交付预览或上传用素材。
+
 ### WeChat Sticker Maker (`skills/wechat-sticker-maker`)
 > 详细文档请参考 [skills/wechat-sticker-maker/README.md](skills/wechat-sticker-maker/README.md)。
 - **可靠切分**：明确布局并寻找透明间隙，拒绝穿过可见内容；默认真实透明PNG、等比居中和安全留白。
@@ -40,6 +48,12 @@ Super Publisher 是一个专为 Agent 设计的插件，旨在实现自动化的
 > 详细文档请参考 [skills/sticker-factory/README.md](skills/sticker-factory/README.md)。
 - **全流程编排**：作为“工厂经理”，串联网格生成器、表情包切片制作器及配套宣传素材设计器。
 - **一键整合交付**：从自然语言需求（如 "生成一套快乐小狗表情包"）直接产出包含表情包切片、图标、元数据以及裁剪好的配套 Banner 与赞赏致谢图的一体化输出目录。
+
+### Animated Sticker Maker (`skills/animated-sticker-maker`)
+> 从照片、静态角色或动作点子设计循环表情，流程见[动态表情制作](skills/animated-sticker-maker/SKILL.md)。
+- [画风与主题参考](skills/animated-sticker-maker/references/creative-directions.md)供按需选择或组合。
+- 按要求交付小样或整套，收到修改意见时可复用其他条目。批量入口读取清单，一次导出 GIF、审片页及可选 ZIP。
+- 审片页打开即可看到代表姿势，可切换到实际 GIF 播放并比较深浅背景。批量入口使用同仓库的 GIF 编码组件。
 
 ### GIF Maker (`skills/gif-maker`)
 > 详细文档请参考 [skills/gif-maker/README.md](skills/gif-maker/README.md)。
@@ -63,6 +77,7 @@ Super Publisher 是一个专为 Agent 设计的插件，旨在实现自动化的
 .
 ├── .claude-plugin/      # Claude 插件配置文件
 ├── skills/              # Agent Skills 目录
+│   ├── animated-sticker-maker/ # 动态表情动作创作与审片 Skill
 │   ├── excalidraw-visual-designer/ # Excalidraw 可编辑视觉设计 Skill
 │   ├── gif-maker/            # [NEW] GIF 动图生成 Skill
 │   ├── grid-sticker-generator/ # [NEW] 通用网格表情生成 Skill
@@ -70,6 +85,7 @@ Super Publisher 是一个专为 Agent 设计的插件，旨在实现自动化的
 │   ├── toutiao-publisher/    # 头条号发布 Skill
 │   ├── video-tutorial-maker/ # 教程视频生成 Skill
 │   ├── wechat-post-publisher/# [NEW] 微信公众号全自动发布图文 Skill
+│   ├── wechat-red-packet-designer/ # 微信静态红包封面设计与导出 Skill
 │   ├── wechat-sticker-assets-designer/ # [NEW] 微信表情包发布配套素材设计 Skill
 │   └── wechat-sticker-maker/ # 微信表情包制作 Skill
 
@@ -131,6 +147,8 @@ cp -r skills/* /path/to/your/workspace/.agents/skills/
 加载插件后，你可以直接通过自然语言与 Claude 交互使用相关能力，例如：
 > "帮我把这篇文章发布到头条号"
 > "检查头条号登录状态"
+> "让参考图里的小熊抬手敬礼做成循环表情，先给我一张动图小样"
+> "用小河狸做一张开工红包封面，先看完整构图和缩小效果"
 > "把这个产品功能写成一支 16:9 教程视频，并生成旁白和字幕"
 > "用 Excalidraw 画一张这个系统架构的可编辑示意图"
 

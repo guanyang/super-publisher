@@ -1,0 +1,3 @@
+interface:
+  display_name: "动态表情制作"
+  short_description: "从照片、角色或动作点子设计循环表情，生成关键帧并以成品动图审片"

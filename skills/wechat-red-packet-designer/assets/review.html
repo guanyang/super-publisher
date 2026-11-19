@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>红包封面审片</title>
+<style>
+  * { box-sizing: border-box; }
+  body {
+    max-width: 62rem;
+    margin: 0 auto;
+    padding: clamp(1rem, 4vw, 2.5rem);
+    color: #271f25;
+    background: #f7f4f1;
+    font: 1rem/1.55 system-ui, sans-serif;
+  }
+  h1 { margin: 0; font-size: 1.8rem; }
+  p { margin: .35rem 0 1.25rem; color: #655863; }
+  section { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(13rem, 100%), 1fr)); gap: 1rem; }
+  figure { margin: 0; padding: 1rem; border: 1px solid #dfd7db; border-radius: .7rem; background: #fff; }
+  figcaption { margin: 0 0 .7rem; font-weight: 650; }
+  .art { position: relative; aspect-ratio: 957 / 1278; }
+  .art img { display: block; width: 100%; height: 100%; object-fit: cover; }
+  .charm { background: repeating-conic-gradient(#ece7ec 0 25%, #fff 0 50%) 0 0 / 1rem 1rem; }
+  .mini { width: 5.5rem; margin: 0 auto; }
+  .cover-stack, .bubble-stack { position: relative; overflow: hidden; margin: 0 auto; }
+  .cover-stack { width: min(13.75rem, 100%); }
+  .cover-stack.small { width: min(6rem, 100%); }
+  .sheet, .bubble-crop, .layer { position: absolute; display: block; }
+  .sheet, .bubble-crop { border-radius: .4rem; }
+  .layer { inset: 0; width: 100%; height: 100%; }
+  .bubble-stack { width: min(11rem, 100%); aspect-ratio: 480 / 384; }
+  .bubble-crop { inset: 25% 0 18.75%; width: 100%; height: 56.25%; object-fit: cover; }
+  .zone {
+    position: absolute;
+    display: grid;
+    place-items: center;
+    padding: .15rem;
+    border: 1px dashed #f7edff;
+    color: #fff;
+    background: #2c1934cc;
+    font-size: .75rem;
+    text-align: center;
+  }
+  .sender { inset: 12% 20% 60%; }
+  .button { inset: 68% 31% 19%; }
+  .lower { inset: 83% 0 0; }
+  footer { margin-top: 1rem; color: #524751; font-size: .9rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>红包封面审片</h1>
+  <p>{{SIZE}}</p>
+  {{COMPOSITION}}
+  <section aria-label="构图检查">
+    <figure>
+      <figcaption>完整封面</figcaption>
+      <div class="art"><img src="{{IMAGE}}" alt="按上传尺寸裁切的完整封面" width="957" height="1278"></div>
+    </figure>
+    <figure>
+      <figcaption>遮挡示意</figcaption>
+      <div class="art">
+        <img src="{{IMAGE}}" alt="带遮挡区域标记的同一张封面" width="957" height="1278">
+        <div class="zone sender">头像、昵称与祝福语</div>
+        <div class="zone button">操作区域</div>
+        <div class="zone lower">底部遮挡</div>
+      </div>
+    </figure>
+    <figure>
+      <figcaption>小尺寸辨识</figcaption>
+      <div class="art mini"><img src="{{IMAGE}}" alt="缩小显示的同一张封面" width="957" height="1278"></div>
+    </figure>
+    {{CHARMS}}
+  </section>
+  <footer>区域位置仅供构图检查。实际裁切和遮挡以微信平台手机预览为准。</footer>
+</main>
+</body>
+</html>
